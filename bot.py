@@ -7,6 +7,7 @@ import base64
 import logging
 import re
 import time
+from pathlib import Path
 
 import discord
 from discord.ext import commands
@@ -161,10 +162,10 @@ _EXT_TO_MEDIA_TYPE = {
 
 def _get_image_media_type(attachment: discord.Attachment) -> str | None:
     """Detecta media type pela extensao do arquivo (mais confiavel que content_type do Discord)."""
-    filename = (attachment.filename or "").lower()
-    for ext, media_type in _EXT_TO_MEDIA_TYPE.items():
-        if filename.endswith(ext):
-            return media_type
+    suffix = Path((attachment.filename or "").lower()).suffix
+    media_type = _EXT_TO_MEDIA_TYPE.get(suffix)
+    if media_type:
+        return media_type
     # Fallback: tentar content_type do Discord (pode vir com charset)
     ct = attachment.content_type or ""
     base_ct = ct.split(";")[0].strip().lower()
@@ -242,9 +243,8 @@ async def handle_question(target, user_id: int, channel_id: int, question: str, 
         elapsed = time.monotonic() - t_start
 
         # Atualizar historico (sem imagens para nao estourar memoria)
-        hist = _conv.get_history(channel_id)
-        hist.append({"role": "user", "content": question})
-        hist.append({"role": "assistant", "content": answer})
+        history.append({"role": "user", "content": question})
+        history.append({"role": "assistant", "content": answer})
         _conv.trim_history(channel_id)
 
         # Registrar knowledge gap se similaridade baixa
@@ -254,7 +254,7 @@ async def handle_question(target, user_id: int, channel_id: int, question: str, 
             else 0.0
         )
         if max_sim < config.CONFIDENCE_THRESHOLD:
-            asyncio.get_event_loop().run_in_executor(
+            asyncio.get_running_loop().run_in_executor(
                 None, rag.log_knowledge_gap, question, max_sim, "discord"
             )
 

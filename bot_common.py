@@ -3,7 +3,9 @@ bot_common.py — Logica compartilhada entre bot Discord e bot Teams.
 Evita duplicacao de codigo de historico, cooldown, split e formatacao.
 """
 
+import re
 import time
+import unicodedata
 from collections import OrderedDict
 
 import config
@@ -47,6 +49,15 @@ class ConversationManager:
         return None
 
 
+def normalize_text(value: str) -> str:
+    """Remove acentos, lowercase, colapsa nao-alfanumerico em espacos."""
+    without_accents = "".join(
+        ch for ch in unicodedata.normalize("NFKD", value or "")
+        if not unicodedata.combining(ch)
+    )
+    return re.sub(r"[^a-z0-9]+", " ", without_accents.lower()).strip()
+
+
 def split_message(text: str, limit: int) -> list[str]:
     """Divide mensagem respeitando limites de linha e espaco."""
     if len(text) <= limit:
@@ -62,25 +73,5 @@ def split_message(text: str, limit: int) -> list[str]:
         if split_at <= 0:
             split_at = limit
         parts.append(text[:split_at])
-        text = text[split_at:].lstrip("\n")
+        text = text[split_at:].lstrip("\n ")
     return parts
-
-
-def format_sources(chunks: list[dict], style: str = "discord") -> str:
-    """Formata fontes dos chunks retornados.
-
-    style: 'discord' usa backticks, 'teams' usa negrito.
-    """
-    sources = set()
-    for chunk in chunks:
-        filename = chunk.get("filename", "")
-        similarity = chunk.get("similarity", 0)
-        if filename:
-            if style == "discord":
-                safe_name = filename.replace("`", "'")
-                sources.add(f"`{safe_name}` ({similarity:.0%})")
-            else:
-                sources.add(f"**{filename}** ({similarity:.0%})")
-    if sources:
-        return f"\n\n**Fontes:** {', '.join(sorted(sources))}"
-    return ""

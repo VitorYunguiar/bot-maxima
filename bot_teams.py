@@ -48,8 +48,6 @@ class TeamsBot(ActivityHandler):
 
         # Remover mencao do bot do texto (Teams inclui <at>BotName</at>)
         if turn_context.activity.recipient and turn_context.activity.recipient.name:
-            bot_name = turn_context.activity.recipient.name
-            # Remove tags <at>...</at>
             text = re.sub(r"<at>.*?</at>", "", text).strip()
 
         if not text:
@@ -122,9 +120,8 @@ class TeamsBot(ActivityHandler):
         elapsed = time.monotonic() - t_start
 
         # Atualizar historico
-        hist = _conv.get_history(conv_id)
-        hist.append({"role": "user", "content": question})
-        hist.append({"role": "assistant", "content": answer})
+        history.append({"role": "user", "content": question})
+        history.append({"role": "assistant", "content": answer})
         _conv.trim_history(conv_id)
 
         # Registrar knowledge gap se similaridade baixa
@@ -134,7 +131,7 @@ class TeamsBot(ActivityHandler):
             else 0.0
         )
         if max_sim < config.CONFIDENCE_THRESHOLD:
-            asyncio.get_event_loop().run_in_executor(
+            asyncio.get_running_loop().run_in_executor(
                 None, rag.log_knowledge_gap, question, max_sim, "teams"
             )
 

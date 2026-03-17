@@ -14,7 +14,6 @@ import time as _time
 from collections import OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 import unicodedata
 
 import httpx
@@ -22,13 +21,14 @@ from google import genai
 from google.genai import types as _gtypes
 
 import config
+from bot_common import normalize_text
 
 logger = logging.getLogger(__name__)
 
-_knowledge_gap_rpc_available: Optional[bool] = None
-_top_knowledge_gaps_rpc_available: Optional[bool] = None
-_business_rules_cache: Optional[tuple[str, float, str]] = None
-_full_context_cache: Optional[tuple[str, float]] = None  # (text, mtime_max)
+_knowledge_gap_rpc_available: bool | None = None
+_top_knowledge_gaps_rpc_available: bool | None = None
+_business_rules_cache: tuple[str, float, str] | None = None
+_full_context_cache: tuple[str, float] | None = None  # (text, mtime_max)
 
 # Expansao de abreviaturas do dominio para embedding de query.
 # Mantem a query original para FTS.
@@ -120,6 +120,7 @@ QUERY_MODULE_HINTS = {
         "tabela",
         "campo",
         "coluna",
+        "banco",
         "integracao",
         "endpoint",
         "api",
@@ -145,6 +146,7 @@ QUERY_MODULE_HINTS = {
     "campanhas_descontos": (
         "campanha",
         "desconto",
+        "verba",
         "miq",
         "mqt",
         "fpu",
@@ -206,8 +208,8 @@ INTENT_RESPONSE_INSTRUCTIONS = {
 }
 
 # ── Clientes ──────────────────────────────────────────────
-_gemini: Optional[genai.Client] = None
-_http_client: Optional[httpx.Client] = None
+_gemini: genai.Client | None = None
+_http_client: httpx.Client | None = None
 
 
 def get_gemini() -> genai.Client:
@@ -472,10 +474,7 @@ def _fallback_log_knowledge_gap(query: str, max_similarity: float, platform: str
     rows = supabase_select(
         "knowledge_gaps",
         select="id,occurrences,max_similarity",
-        filters={
-            "query": f"eq.{normalized_query}",
-            "limit": 1,
-        },
+        filters={"query": f"eq.{normalized_query}", "limit": "1"},
     )
 
     if rows:
@@ -657,11 +656,7 @@ def _preprocess_query(query: str) -> tuple[str, str]:
 
 
 def _normalize_route_text(value: str) -> str:
-    normalized = unicodedata.normalize("NFKD", value or "")
-    without_accents = "".join(ch for ch in normalized if not unicodedata.combining(ch))
-    lowered = without_accents.lower()
-    compact = re.sub(r"[^a-z0-9]+", " ", lowered).strip()
-    return f" {compact} "
+    return f" {normalize_text(value)} "
 
 
 def _classify_query_intent(query: str) -> dict:

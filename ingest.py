@@ -31,7 +31,9 @@ import httpx
 from langchain_text_splitters import MarkdownTextSplitter
 
 import config
+from bot_common import normalize_text
 from rag import (
+    QUERY_MODULE_HINTS,
     create_document_embeddings,
     embedding_to_pgvector,
     supabase_delete,
@@ -40,7 +42,6 @@ from rag import (
     supabase_update,
 )
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 _last_embed_call_at = 0.0
 _http_client: httpx.Client | None = None
@@ -59,7 +60,7 @@ def read_pdf(filepath: str) -> str:
     """
     from PyPDF2 import PdfReader
 
-    logger.info(f"Processando PDF com PyPDF2: {Path(filepath).name}")
+    logger.info("Processando PDF com PyPDF2: %s", Path(filepath).name)
     logger.info(
         "Dica: para melhor qualidade, converta o PDF para .md via DeepSeek "
         "e coloque na pasta de documentos."
@@ -76,13 +77,13 @@ def read_pdf(filepath: str) -> str:
         full_text = "\n\n".join(pages)
 
         if not full_text.strip():
-            logger.warning(f"PyPDF2 retornou vazio para {filepath}")
+            logger.warning("PyPDF2 retornou vazio para %s", filepath)
 
         return full_text
 
     except Exception as e:
-        logger.error(f"Erro ao ler PDF: {e}")
-        raise e
+        logger.error("Erro ao ler PDF: %s", e)
+        raise
 
 
 def read_pdf_bytes(data: bytes) -> str:
@@ -127,11 +128,7 @@ _splitter: MarkdownTextSplitter | None = None
 def _get_splitter() -> MarkdownTextSplitter:
     """Retorna instancia reutilizavel do MarkdownTextSplitter."""
     global _splitter
-    if (
-        _splitter is None
-        or _splitter._chunk_size != config.CHUNK_SIZE
-        or _splitter._chunk_overlap != config.CHUNK_OVERLAP
-    ):
+    if _splitter is None:
         _splitter = MarkdownTextSplitter(
             chunk_size=config.CHUNK_SIZE,
             chunk_overlap=config.CHUNK_OVERLAP,
@@ -374,7 +371,7 @@ def _failed_sources_from_report() -> tuple[list[Path], list[str]]:
         source_path = Path(source)
         if source_path.exists() and source_path.suffix.lower() in READERS:
             file_sources.append(source_path)
-    return file_sources, _dedupe_keep_order(url_sources)
+    return file_sources, list(dict.fromkeys(url_sources))
 
 
 def _get_indexed_filenames() -> set[str]:
@@ -420,15 +417,6 @@ def _is_private_url(url: str) -> bool:
         return False
 
 
-def _dedupe_keep_order(values: list[str]) -> list[str]:
-    seen: set[str] = set()
-    ordered: list[str] = []
-    for value in values:
-        if value not in seen:
-            seen.add(value)
-            ordered.append(value)
-    return ordered
-
 
 def _to_slug(value: str, default: str = "source") -> str:
     value = re.sub(r"[^a-zA-Z0-9._-]+", "_", value).strip("_")
@@ -462,12 +450,6 @@ def _title_to_filename(title: str) -> str:
     return upper[:120]
 
 
-def _normalize_match_text(value: str) -> str:
-    normalized = unicodedata.normalize("NFKD", value or "")
-    without_accents = "".join(ch for ch in normalized if not unicodedata.combining(ch))
-    lowered = without_accents.lower()
-    return re.sub(r"[^a-z0-9]+", " ", lowered).strip()
-
 
 _MODULE_HINTS_BY_FILENAME = [
     ("01 parametros e configuracao", "parametros_configuracao"),
@@ -483,62 +465,10 @@ _MODULE_HINTS_BY_FILENAME = [
     ("base maxgestao", "gestao_operacional"),
 ]
 
-_MODULE_HINTS_BY_KEYWORDS = {
-    "sql_integracao": (
-        " sql ",
-        " tabela ",
-        " select ",
-        " endpoint ",
-        " integracao ",
-        " api ",
-        " join ",
-        " where ",
-        " banco ",
-    ),
-    "parametros_configuracao": (
-        " parametro ",
-        " configuracao ",
-        " permissao ",
-        " central ",
-        " perfil ",
-        " sincronizacao ",
-    ),
-    "pedidos_vendas": (
-        " pedido ",
-        " venda ",
-        " orcamento ",
-        " pre pedido ",
-        " cliente bloqueado ",
-        " filial retira ",
-        " timeline ",
-    ),
-    "campanhas_descontos": (
-        " campanha ",
-        " desconto ",
-        " verba ",
-        " miq ",
-        " mqt ",
-        " fpu ",
-    ),
-    "rotas_visitas_consultas": (
-        " rota ",
-        " visita ",
-        " check in ",
-        " check out ",
-        " roteiro ",
-    ),
-    "financeiro_pagamentos": (
-        " financeiro ",
-        " pagamento ",
-        " conta corrente ",
-        " limite ",
-        " inadimplente ",
-    ),
-}
 
 
 def _infer_module(filename: str, title: str, source: str, doc_type: str) -> str:
-    joined = _normalize_match_text(f"{filename} {title} {source} {doc_type}")
+    joined = normalize_text(f"{filename} {title} {source} {doc_type}")
     padded = f" {joined} "
 
     for filename_hint, module in _MODULE_HINTS_BY_FILENAME:
@@ -548,8 +478,8 @@ def _infer_module(filename: str, title: str, source: str, doc_type: str) -> str:
     if doc_type.lower() == "sql":
         return "sql_integracao"
 
-    for module, hints in _MODULE_HINTS_BY_KEYWORDS.items():
-        if any(hint in padded for hint in hints):
+    for module, hints in QUERY_MODULE_HINTS.items():
+        if any(f" {hint} " in padded for hint in hints):
             return module
 
     return "geral"
@@ -740,7 +670,7 @@ def _load_urls_from_file(filepath: str) -> list[str]:
             for url in candidates:
                 if _is_url(url):
                     urls.append(url)
-    return _dedupe_keep_order(urls)
+    return list(dict.fromkeys(urls))
 
 
 
@@ -866,6 +796,37 @@ def _contextualize_chunks_batch(
         return chunks_with_indices
 
 
+def _build_chunk_row(
+    *,
+    doc_id: str,
+    chunk_index: int,
+    clean_content: str,
+    filename: str,
+    doc_type: str,
+    source_type: str,
+    module: str,
+    title: str,
+    doc_priority: int,
+    embedding: list[float],
+) -> dict:
+    return {
+        "document_id": doc_id,
+        "content": clean_content,
+        "chunk_index": chunk_index,
+        "metadata": {
+            "filename": filename,
+            "chunk_index": chunk_index,
+            "doc_type": doc_type,
+            "source_type": source_type,
+            "module": module,
+            "title": title,
+            "doc_priority": doc_priority,
+        },
+        "embedding": embedding_to_pgvector(embedding),
+        "token_count": len(clean_content.split()),
+    }
+
+
 def _ingest_text_source(
     *,
     filename: str,
@@ -964,24 +925,18 @@ def _ingest_text_source(
         try:
             embeddings = _embed_batch_with_retry(contents, filename, indices[0])
             for chunk_index, clean_content, embedding in zip(indices, contents, embeddings):
-                rows.append(
-                    {
-                        "document_id": doc_id,
-                        "content": clean_content,
-                        "chunk_index": chunk_index,
-                        "metadata": {
-                            "filename": filename,
-                            "chunk_index": chunk_index,
-                            "doc_type": doc_type,
-                            "source_type": source_type,
-                            "module": module,
-                            "title": title,
-                            "doc_priority": doc_priority,
-                        },
-                        "embedding": embedding_to_pgvector(embedding),
-                        "token_count": len(clean_content.split()),
-                    }
-                )
+                rows.append(_build_chunk_row(
+                    doc_id=doc_id,
+                    chunk_index=chunk_index,
+                    clean_content=clean_content,
+                    filename=filename,
+                    doc_type=doc_type,
+                    source_type=source_type,
+                    module=module,
+                    title=title,
+                    doc_priority=doc_priority,
+                    embedding=embedding,
+                ))
         except Exception as batch_error:
             logger.error(
                 "Erro no lote de %s (chunk inicial %s): %s. Fallback chunk a chunk...",
@@ -992,24 +947,18 @@ def _ingest_text_source(
             for chunk_index, clean_content in clean_batch:
                 try:
                     embedding = _embed_batch_with_retry([clean_content], filename, chunk_index)[0]
-                    rows.append(
-                        {
-                            "document_id": doc_id,
-                            "content": clean_content,
-                            "chunk_index": chunk_index,
-                            "metadata": {
-                                "filename": filename,
-                                "chunk_index": chunk_index,
-                                "doc_type": doc_type,
-                                "source_type": source_type,
-                                "module": module,
-                                "title": title,
-                                "doc_priority": doc_priority,
-                            },
-                            "embedding": embedding_to_pgvector(embedding),
-                            "token_count": len(clean_content.split()),
-                        }
-                    )
+                    rows.append(_build_chunk_row(
+                        doc_id=doc_id,
+                        chunk_index=chunk_index,
+                        clean_content=clean_content,
+                        filename=filename,
+                        doc_type=doc_type,
+                        source_type=source_type,
+                        module=module,
+                        title=title,
+                        doc_priority=doc_priority,
+                        embedding=embedding,
+                    ))
                 except Exception as chunk_error:
                     failed_chunks.append(chunk_index)
                     logger.error("Erro no chunk %s de %s: %s", chunk_index, filename, chunk_error)
@@ -1019,6 +968,19 @@ def _ingest_text_source(
             total_inserted += len(rows)
 
         logger.info("%s/%s chunks inseridos (%s)", total_inserted, len(chunks), filename)
+
+    if total_inserted == 0:
+        logger.error("Nenhum chunk inserido para %s. Revertendo document row.", filename)
+        try:
+            supabase_delete("documents", "id", doc_id)
+        except Exception as e:
+            logger.error("Erro ao reverter document row de %s: %s", filename, e)
+        return {
+            "filename": filename,
+            "chunks_count": 0,
+            "failed_chunks": len(failed_chunks),
+            "error": "nenhum chunk inserido",
+        }
 
     if temp_filename and existing:
         existing_doc_id = existing[0]["id"]
@@ -1155,12 +1117,12 @@ def ingest_directory(
     urls: list[str] | None = None,
 ) -> list[dict]:
     file_sources: list[Path] = []
-    url_sources = _dedupe_keep_order([u for u in (urls or []) if _is_url(u)])
+    url_sources = list(dict.fromkeys([u for u in (urls or []) if _is_url(u)]))
 
     if retry_failed_only:
         failed_files, failed_urls = _failed_sources_from_report()
         file_sources = failed_files
-        url_sources = _dedupe_keep_order(url_sources + failed_urls)
+        url_sources = list(dict.fromkeys(url_sources + failed_urls))
     else:
         docs_dir = directory if directory is not None else config.DOCS_DIR
         docs_path = Path(docs_dir)
@@ -1201,6 +1163,7 @@ def _parse_args() -> argparse.Namespace:
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
     args = _parse_args()
 
     urls = list(args.url or [])
