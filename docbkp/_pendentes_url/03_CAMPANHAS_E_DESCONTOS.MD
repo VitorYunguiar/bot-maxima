@@ -1,0 +1,163 @@
+# Revisao de Documento Local: 03-CAMPANHAS-E-DESCONTOS.md
+
+## Fonte
+- C:\revive-claude\bot-maxima\documentos\langextract\03-CAMPANHAS-E-DESCONTOS.md
+
+## Metadados
+- Tipo detectado: `md`
+- Gerado em: `2026-02-12T16:24:10.985373+00:00`
+- Fatos extraidos (LangExtract): `151`
+
+## Conhecimento Extraido
+[LangExtract] Fatos estruturados extraidos:
+- [procedimento] Configurar campanhas de desconto na Central de Configuracoes (modulo=Central de Configuracoes; acao=configurar campanhas)
+- [requisito] Campanhas sao aplicadas automaticamente no aplicativo mobile durante o processo de vendas (campo=aplicacao automatica)
+- [requisito] Campanha MQT (Mix por Quantidade Minima) aplica desconto em itens especificos a partir de quantidade minima de um grupo de produtos (campo=MQT)
+- [requisito] Campanha SQP (Quantidade Subcategoria no Pedido) aplica desconto baseado na quantidade de itens de subcategorias especificas (campo=SQP)
+- [requisito] Campanha MIQ (Mix por Intervalo de Quantidade) aplica desconto quando produtos atingem intervalo especifico de quantidade minima e maxima (campo=MIQ)
+- [requisito] Campanha FPU (Faixa Unica de Pedido) aplica desconto baseado em faixas de quantidade com opcao de produtos obrigatorios (campo=FPU)
+- [requisito] A funcionalidade MQT concede desconto em itens especificos ao atingir uma quantidade minima de um grupo de produtos
+- [procedimento] Acessar Central de Configuracoes > Inteligencia de Negocio > Combo de Desconto e clicar no icone + (modulo=Inteligencia de Negocio; acao=cadastrar campanha)
+- [requisito] E obrigatorio preencher Descricao, Data Inicio e Data Fim (campo=Descricao, Data Inicio, Data Fim)
+- [requisito] O campo Tipo deve ser selecionado como MQT (campo=Tipo)
+- [requisito] O campo Filial e obrigatorio se a filial trabalhar com embalagem (campo=Filial)
+- [procedimento] Configurar restricoes na aba Restricoes (Filiais, Regioes, Ramo de Atividade, Supervisores, Representantes, Clientes) (modulo=Combo de Desconto; acao=configurar restricoes)
+- [procedimento] Adicionar itens na campanha configurando Produto, Quantidade Minima e Desconto (modulo=Campanhas; acao=adicionar itens)
+- [requisito] Tipo de Desconto Automatico nao permite alteracao; Flexivel permite ajuste ate o limite (campo=Tipo de Desconto)
+- [requisito] A campanha aparece na aba Campanhas de Desconto no aplicativo
+- [requisito] Produtos de campanha aparecem com cor diferente na aba Itens
+- [requisito] Nao e possivel editar itens da campanha pela aba Itens (necessario usar aba Campanhas)
+- [requisito] Ao excluir um item do combo no aplicativo, todos os produtos do combo sao excluidos
+- [procedimento] Cadastrar Campanha SQP em Central de Configuracoes > Inteligencia de Negocio > Combo de Desconto > icone + (modulo=Central de Configuracoes; acao=cadastrar campanha)
+- [procedimento] Preencher Dados Basicos no cadastro (acao=preencher dados basicos)
+- [requisito] Campos obrigatorios: Descricao, Data Inicio, Data Fim e Tipo (campo=Descricao, Data Inicio, Data Fim, Tipo)
+- [requisito] Para o campo Tipo, deve-se selecionar a opcao SQP (campo=Tipo)
+- [procedimento] Configurar opcoes adicionais de agrupamento e debito (acao=configurar opcoes adicionais)
+- [requisito] Opcoes disponiveis: Considerar Familia de Produtos e Debitar do conta corrente (campo=Considerar Familia de Produtos, Debitar do conta corrente)
+- [procedimento] Configurar restricoes na Aba Restricoes (modulo=Aba Restricoes; acao=configurar restricoes)
+- [requisito] Restricoes disponiveis: Filial, Regioes, Ramos de Atividade, Supervisores, Representantes, Clientes, Planos de pagamento
+- [procedimento] Configurar categorias na Aba Categoria (modulo=Aba Categoria; acao=configurar categorias)
+- [requisito] Campos necessarios: Tipo, Valor, Inicio da Faixa, Fim da Faixa, Desconto
+- [requisito] O campo Valor depende do Tipo selecionado (ex: se Tipo = SUB-CATEGORIA, selecionar a subcategoria) (campo=Valor)
+- [requisito] Inicio da Faixa representa a quantidade minima de itens para validar a campanha (campo=Inicio da Faixa)
+- [requisito] Desconto e o percentual aplicado quando a faixa for atingida (campo=Desconto)
+- [requisito] Permite cadastrar multiplas faixas com configuracoes especificas
+- [procedimento] Visualizar regras cadastradas com faixas na campanha SQP (modulo=Aplicativo; acao=visualizar regras)
+- [requisito] Ao clicar na campanha SQP, são exibidas todas as regras cadastradas
+- [procedimento] Validar faixa na campanha SQP (modulo=Aplicativo; acao=validar faixa)
+- [requisito] Ao informar quantidade que valida uma faixa, ela será marcada como validada
+- [requisito] Não é obrigatório validar todas as faixas para inserir itens de uma faixa validada na campanha SQP
+- [requisito] Produtos inseridos aparecem em cor diferente na aba Itens
+- [procedimento] Editar e excluir itens na campanha SQP (modulo=Aplicativo; acao=editar/excluir)
+- [requisito] Edição e exclusão devem ser feitas pela aba Campanhas de Desconto
+- [requisito] Campanha MIQ aplica desconto quando produtos atingem intervalo de quantidade (mínimo e máximo)
+- [procedimento] Acessar cadastro de Campanha MIQ em Central de Configurações > Inteligência de Negócio > Combo de Desconto > ícone + (modulo=Inteligência de Negócio; acao=cadastrar campanha)
+- [procedimento] Preencher dados básicos da Campanha MIQ
+- [requisito] Campos Obrigatórios: Descrição, Data Início, Data Fim, Tipo (Selecionar MIQ) (campo=Descrição, Data Início, Data Fim, Tipo)
+- [requisito] Campos Opcionais: Quantidade de combo por cliente, Quantidade de combo por usuário, Filial (campo=Quantidade de combo por cliente, Quantidade de combo por usuário, Filial)
+- [requisito] Opções Adicionais: Considerar Família de Produtos, Debitar do conta corrente
+- [procedimento] Configurar restrições na aba Restrições
+- [requisito] Restrição disponível: Filial (campo=Filial)
+- [procedimento] Configurar Itens na Aba Itens (modulo=Configuracao de Campanhas; acao=configurar itens)
+- [requisito] Selecionar o produto para incluir no combo (campo=Produto)
+- [requisito] Definir quantidade minima necessaria e maxima permitida no pedido (campo=Quantidade Minima/Maxima)
+- [requisito] Tipo de Desconto Automatico impede alteracao pelo representante (campo=Tipo de Desconto)
+- [requisito] Tipo de Desconto Flexivel permite alteracao pelo representante (campo=Tipo de Desconto)
+- [procedimento] Clicar na campanha MIQ no aplicativo para abrir listagem de itens (modulo=Aplicativo; acao=visualizar campanha)
+- [requisito] Quantidade deve estar dentro do intervalo minimo-maximo para ser salva, caso contrario exibe erro (campo=Quantidade)
+- [procedimento] Realizar edicao e exclusao de itens pela aba Campanhas de Desconto (modulo=Campanhas de Desconto; acao=editar ou excluir)
+- [requisito] Campanha baseada em faixas de quantidade com opcao de definir produtos obrigatorios
+- [requisito] Todas as regras cadastradas devem ser validadas para incluir os itens
+- [procedimento] Acessar Central de Configuracoes > Inteligencia de Negocio > Combo de Desconto e clicar no icone + (modulo=Inteligencia de Negocio; acao=Cadastrar Campanha FPU)
+- [requisito] E necessario preencher os campos obrigatorios: Descricao, Data Inicio, Data Fim e Tipo (Selecionar FPU) (campo=Descricao, Data Inicio, Data Fim, Tipo)
+- [requisito] Campos opcionais disponiveis: Quantidade de combo por cliente, Quantidade de combo por usuario, Filial e Debitar do conta corrente (campo=Quantidade de combo por cliente, Quantidade de combo por usuario, Filial)
+- [procedimento] Configurar restricoes na Aba Restricoes selecionando Filial, Regioes, Ramos de Atividade, Supervisores, Representantes, Clientes ou Planos de pagamento (modulo=Inteligencia de Negocio; acao=Configurar Restricoes)
+- [procedimento] Configurar categorias na Aba Categoria informando Tipo, Valor e Inicio da Faixa (modulo=Inteligencia de Negocio; acao=Configurar Categorias)
+- [requisito] É possível cadastrar múltiplas faixas de campanha, cada uma com configurações específicas (campo=faixas)
+- [procedimento] Ao clicar na campanha FPU, o sistema exibe os dados cadastrados (faixa inicial, final, desconto e produtos obrigatórios) (modulo=Campanha FPU; acao=visualizar dados)
+- [procedimento] Clicar sobre a campanha abre a listagem dos produtos da subcategoria configurada (modulo=Campanha FPU; acao=listar produtos)
+- [requisito] Se a quantidade inserida estiver abaixo da mínima, o sistema exibe mensagem informando que não atende a regra (campo=quantidade)
+- [requisito] O sistema valida se a quantidade de produtos obrigatórios foi atendida (campo=produtos obrigatórios)
+- [procedimento] O sistema exibe a mensagem 'Regra foi validada' quando todas as validações forem atendidas (modulo=Campanha FPU; acao=validar regras)
+- [requisito] Na campanha FPU, todas as regras devem estar validadas antes de incluir os itens no pedido (campo=inclusão de itens)
+- [requisito] Cálculo de Lucratividade Padrão (maxPedido): ((PVENDA - VLCUSTOFIN) / PVENDA) * 100 (campo=lucratividade)
+- [requisito] VLCUSTOFIN refere-se ao Custo financeiro do produto (campo CUSTOFIN) (campo=CUSTOFIN)
+- [requisito] O calculo de lucratividade alternativa utiliza o campo VALORULTENT da tabela PCEST em vez do CUSTOFIN para contemplar impostos da ultima entrada (campo=VALORULTENT)
+- [requisito] Formula da Lucratividade Alternativa: ((PVENDA - VALORULTENT) / PVENDA) * 100 (campo=PVENDA)
+- [procedimento] Configurar Lucratividade Alternativa: Central de Configuracoes > Menu lateral > Configuracoes > Parametros > Buscar HABILITA_LUCRATIVIDADE_ALTERNATIVA > Editar > Habilitar > Salvar (modulo=Central de Configuracoes; acao=Habilitar parametro)
+- [procedimento] Visualizar no Aplicativo: Iniciar novo Pedido > Aba Tabela > Selecionar produto (modulo=Aplicativo; acao=Selecionar produto)
+- [procedimento] Calculo de lucratividade na tela de negociacao (modulo=Negociacao; acao=calcular lucratividade)
+- [requisito] O calculo utiliza o campo VALORULTENT da tabela PCEST (campo=VALORULTENT)
+- [procedimento] Configurar permissoes de usuario em maxPedido > Cadastro > Usuarios > Editar > Permissoes (modulo=Cadastro; acao=editar permissoes)
+- [requisito] Desabilitar 'Ocultar Informacoes sobre lucratividade' e habilitar 'Habilitar Visualizacao de Margem/Lucratividade'
+- [procedimento] Cadastrar cores da legenda em Cadastro > Cor - Legenda de campos (modulo=Cadastro; acao=adicionar cor legenda)
+- [requisito] Preencher Campo, Cor e Faixa de Lucratividade (intervalo inicial e final) (campo=Faixa de Lucratividade)
+- [procedimento] Editar cores e faixas cadastradas nas configurações (modulo=Configurações; acao=Editar)
+- [procedimento] Excluir configurações cadastradas (modulo=Configurações; acao=Excluir)
+- [procedimento] Visualizar indicação de lucratividade no aplicativo: Sincronizar app, iniciar pedido, selecionar produto e informar desconto (modulo=Aplicativo; acao=Visualizar)
+- [requisito] Versão mínima 3.44.0 para Lucratividade Total na Tela de Negociação (campo=Versão)
+- [procedimento] Habilitar parâmetro MOSTRAR_LUCRATIVIDADE_TOTAL_NEGOCIACAO em Central de Configurações > Configurações > Parâmetros (modulo=Central de Configurações; acao=Habilitar Parâmetro)
+- [requisito] O parâmetro MOSTRAR_LUCRATIVIDADE_TOTAL_NEGOCIACAO exibe o percentual de lucratividade total na tela de negociação (campo=MOSTRAR_LUCRATIVIDADE_TOTAL_NEGOCIACAO)
+- [procedimento] Habilitar permissão de acesso para Lucratividade Total (modulo=Permissões; acao=Habilitar)
+- [procedimento] Habilitar permissão 'Habilitar Visualização de Margem/Lucratividade' em Cadastro > Perfil de usuários > Ações > Permissões (modulo=Cadastro; acao=habilitar permissão)
+- [requisito] Selecionar o perfil de usuário desejado
+- [procedimento] Configurar cores da faixa de lucratividade em Cadastro > Cor/Legenda de campo (modulo=Cadastro; acao=configurar cores)
+- [requisito] A permissão 'Habilitar Visualização de Margem/Lucratividade' deve estar habilitada
+- [procedimento] Visualizar Lucratividade Total na tela de negociação do produto no aplicativo (modulo=Aplicativo; acao=visualizar informação)
+- [requisito] A informação é exibida no canto direito e segue a cor configurada na legenda
+- [procedimento] Ocultar lucratividade do produto via Central de Configurações > Configurações > Parâmetros (modulo=Configurações; acao=habilitar parâmetro)
+- [requisito] Habilitar o parâmetro OCULTAR_LUCRATIVIDADE_PRODUTO (campo=OCULTAR_LUCRATIVIDADE_PRODUTO)
+- [procedimento] Habilitar parametro atraves do icone de edicao na barra de acoes (acao=habilitar parametro)
+- [requisito] O parametro OCULTAR_LUCRATIVIDADE_PRODUTO vem por padrao desabilitado, configurado para mostrar a lucratividade (campo=OCULTAR_LUCRATIVIDADE_PRODUTO)
+- [requisito] No aplicativo maxPedido, com o parametro habilitado, a lucratividade nao sera apresentada na tela de negociacao (campo=lucratividade)
+- [requisito] Parametro HABILITA_LUCRATIVIDADE_ALTERNATIVA calcula lucratividade usando VALORULTENT ao inves de CUSTOFIN (campo=HABILITA_LUCRATIVIDADE_ALTERNATIVA)
+- [requisito] Parametro MOSTRAR_LUCRATIVIDADE_TOTAL_NEGOCIACAO exibe lucratividade total do pedido na tela de negociacao (campo=MOSTRAR_LUCRATIVIDADE_TOTAL_NEGOCIACAO)
+- [requisito] Campo VALORULTENT da tabela PCEST refere-se ao Valor da ultima entrada (inclui impostos) (campo=PCEST.VALORULTENT)
+- [requisito] Campo CUSTOFIN da tabela PCEST refere-se ao Custo financeiro do produto (campo=PCEST.CUSTOFIN)
+- [procedimento] Gerenciar campanhas de desconto na Central de Configurações do maxPedido (modulo=Central de Configurações do maxPedido; acao=gerenciar campanhas)
+- [procedimento] Sincronizar campanhas de desconto com o aplicativo mobile (modulo=maxPedido; acao=sincronizar)
+- [requisito] Configurar datas de início e fim para o período de vigência (campo=datas de inicio e fim)
+- [procedimento] Segmentar campanhas por cliente, região ou representante usando restrições (modulo=Campanhas; acao=segmentar)
+- [requisito] Usar Tipo de Desconto Automático quando o desconto não deve ser alterado (campo=Tipo de Desconto)
+- [requisito] Usar Tipo de Desconto Flexível para dar margem de negociação ao vendedor (campo=Tipo de Desconto)
+- [procedimento] Testar a campanha com um grupo restrito antes de liberar amplamente (modulo=Campanhas; acao=testar)
+- [requisito] Usar lucratividade padrão (CUSTOFIN) para análise baseada em custo médio (campo=CUSTOFIN)
+- [requisito] Usar lucratividade alternativa (VALORULTENT) para considerar impostos da última entrada (campo=VALORULTENT)
+- [procedimento] Configurar faixas de cores da legenda (vermelho, amarelo, verde) para visualização de lucratividade (modulo=Configurações; acao=configurar cores)
+- [requisito] Definir faixas para prejuízo, baixa margem e margem adequada
+- [procedimento] Configurar permissões de visualização de lucratividade por perfil de usuário (modulo=Permissões; acao=controlar acesso)
+- [requisito] Usuário deve ter perfil autorizado para visualizar lucratividade (campo=perfil de usuário)
+- [procedimento] Sincronizar aplicativo mobile após alterações em parâmetros, campanhas, configurações de cores e permissões (modulo=Mobile; acao=sincronizar)
+- [requisito] Sincronização obrigatória após alterações cadastrais
+- [procedimento] Verificar sincronização, restrições (Filial, Região, Cliente) e inclusão de representante quando a campanha não aparece no app (modulo=Campanhas; acao=solução de problemas)
+- [requisito] A data atual deve estar dentro do período de vigência da campanha (campo=vigência)
+- [procedimento] Verificar configuração do parâmetro OCULTAR_LUCRATIVIDADE_PRODUTO quando a lucratividade não é exibida (modulo=Parâmetros; acao=solução de problemas)
+- [requisito] O parâmetro OCULTAR_LUCRATIVIDADE_PRODUTO deve estar desabilitado (campo=OCULTAR_LUCRATIVIDADE_PRODUTO)
+- [procedimento] Verificar se a permissão 'Habilitar Visualização de Margem/Lucratividade' está habilitada (modulo=Permissões; acao=verificar permissão)
+- [procedimento] Sincronizar o aplicativo (modulo=Aplicativo; acao=sincronizar)
+- [procedimento] Verificar cadastro de cores em Cadastro > Cor - Legenda de campos (modulo=Cadastro; acao=verificar cores)
+- [procedimento] Confirmar configuração das faixas de lucratividade (modulo=Configurações; acao=configurar faixas)
+- [requisito] Itens de campanha não podem ser editados pela aba Itens (campo=aba Itens)
+- [procedimento] Editar ou excluir itens de campanha pela aba 'Campanhas de Desconto' (modulo=Pedidos; acao=editar campanha)
+- [requisito] Ao excluir um item de campanha, todos os produtos do combo serão excluídos (campo=item de campanha)
+- [procedimento] Verificar validação das faixas cadastradas na campanha FPU (modulo=Campanha FPU; acao=validar faixas)
+- [procedimento] Confirmar se a quantidade de produtos obrigatórios foi atendida (modulo=Campanha FPU; acao=verificar quantidade)
+- [requisito] Todas as regras devem estar validadas antes de incluir itens na campanha FPU (campo=regras validadas)
+- [requisito] MQT (Mix por Quantidade Minima) e uma campanha que exige quantidade minima de produtos para desconto
+- [requisito] SQP (Quantidade Subcategoria no Pedido) e uma campanha baseada em quantidade de subcategorias
+- [requisito] MIQ (Mix por Intervalo de Quantidade) e uma campanha com intervalo minimo e maximo de quantidade
+- [requisito] FPU (Faixa Unica de Pedido) e uma campanha com faixas e produtos obrigatorios
+- [requisito] CUSTOFIN representa o custo financeiro do produto na tabela PCEST (campo=CUSTOFIN)
+- [requisito] VALORULTENT representa o valor da ultima entrada incluindo impostos na tabela PCEST (campo=VALORULTENT)
+- [requisito] PVENDA refere-se ao preco de venda do produto (campo=PVENDA)
+- [requisito] Desconto Automatico nao pode ser alterado pelo vendedor
+- [requisito] Desconto Flexivel pode ser ajustado pelo vendedor ate o limite definido
+- [requisito] Lucratividade e o percentual de margem de lucro calculado sobre o preco de venda
+- [procedimento] Sincronizacao realiza a atualizacao de dados entre o portal e o aplicativo mobile (acao=sincronizacao)
+- [procedimento] Verificar regra de Desconto acima do permitido em venda Balcao Reserva (modulo=Venda Balcao Reserva; acao=validar desconto)
+- [procedimento] Cadastrar Perfil de Usuarios no maxPedido (modulo=maxPedido; acao=cadastrar perfil)
+- [procedimento] Listar lote dos produtos do maxPedido (modulo=maxPedido; acao=listar lote)
+- [procedimento] Consultar Layout de integracao (modulo=Integracao; acao=consultar layout)
+- [procedimento] Habilitar e configurar o pre pedido no maxPedido (modulo=maxPedido; acao=configurar pre pedido)
+- [procedimento] Ativar Mix do Cliente no maxPedido (modulo=maxPedido; acao=ativar mix)
+- [requisito] Versao do maxPedido deve ser 3.44.0 ou superior (campo=versao)

@@ -1,0 +1,22 @@
+[
+  {
+    "text": "Para cancelar um pedido no sistema, abra Vendas > Pedidos, localize o numero do pedido, clique em Acoes > Cancelar e confirme com o motivo.",
+    "extractions": [
+      {
+        "extraction_class": "procedimento",
+        "extraction_text": "Cancelar pedido em Vendas > Pedidos > Acoes > Cancelar",
+        "attributes": {
+          "modulo": "Vendas",
+          "acao": "cancelar pedido"
+        }
+      },
+      {
+        "extraction_class": "requisito",
+        "extraction_text": "E necessario informar motivo no cancelamento",
+        "attributes": {
+          "campo": "motivo"
+        }
+      }
+    ]
+  }
+]

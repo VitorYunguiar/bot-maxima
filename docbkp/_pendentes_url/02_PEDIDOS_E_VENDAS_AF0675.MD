@@ -1,0 +1,249 @@
+# Revisao de Documento Local: 02-PEDIDOS-E-VENDAS.md
+
+## Fonte
+- C:\revive-claude\bot-maxima\documentos\langextract\02-PEDIDOS-E-VENDAS.md
+
+## Metadados
+- Tipo detectado: `md`
+- Gerado em: `2026-02-12T16:45:39.777548+00:00`
+- Fatos extraidos (LangExtract): `271`
+
+## Conhecimento Extraido
+[LangExtract] Fatos estruturados extraidos:
+- [procedimento] Criar pre-pedido no maxPedido (modulo=maxPedido; acao=criar pre-pedido)
+- [requisito] Pre-pedido deve ser configurado com informacoes como regiao, filial e itens (campo=regiao, filial, itens)
+- [procedimento] Configurar pre-pedido como obrigatorio ou sugestao (modulo=maxPedido; acao=configurar pre-pedido)
+- [requisito] Pre-pedido pode ser configurado como obrigatorio ou sugestao (campo=tipo de configuracao)
+- [requisito] E necessario ter o Login e Senha do maxSolucoes em maos para fazer as configuracoes.
+- [requisito] Em casos em que ha dois ambientes (Homologacao e Producao), deve-se escolher o ambiente desejado antes de prosseguir.
+- [requisito] Na maioria dos casos o correto e escolher o ambiente de Producao.
+- [requisito] O ambiente de Homologacao e escolhido apenas em casos em que este ambiente esta validado para testes.
+- [procedimento] Acessar o portal maxSolucoes atraves do link: https://appsv.solucoesmaxima.com.br (modulo=maxSolucoes; acao=acessar portal)
+- [procedimento] Digitar o usuario e senha de acesso no portal maxSolucoes (modulo=maxSolucoes; acao=login)
+- [procedimento] Clicar na opcao maxVendas (modulo=maxVendas; acao=acessar)
+- [procedimento] Clicar em maxPedido na tela seguinte (modulo=maxPedido; acao=acessar)
+- [procedimento] Acessar Configuracoes >> Parametros no menu lateral (modulo=Configuracoes; acao=acessar parametros)
+- [procedimento] Realizar busca pelo parametro UTILIZA_PRE_PEDIDO pelo nome (modulo=Parametros; acao=buscar parametro)
+- [procedimento] Filtrar parametros por tipo: Geral, por Usuario ou por Filial (modulo=Parametros; acao=filtrar parametros)
+- [procedimento] Clicar no icone de edicao na coluna de Acoes para o parametro (modulo=Parametros; acao=editar parametro)
+- [procedimento] Arrastar para habilitar ou desabilitar o parametro UTILIZA_PRE_PEDIDO (modulo=Parametros; acao=habilitar/desabilitar parametro)
+- [procedimento] Clicar em Salvar apos alterar o parametro (modulo=Parametros; acao=salvar alteracoes)
+- [requisito] O parametro UTILIZA_PRE_PEDIDO deve ser habilitado para usar pre-pedido (campo=UTILIZA_PRE_PEDIDO)
+- [requisito] Atentar-se ao tipo do parametro UTILIZA_PRE_PEDIDO, podendo ser por Filial se necessario (campo=tipo do parametro UTILIZA_PRE_PEDIDO)
+- [procedimento] Consultar documentacao especifica sobre criacao de parametros no maxPedido para criar um novo parametro (modulo=maxPedido; acao=criar parametro)
+- [procedimento] Acessar Inteligencia de Negocio >> Recomendacao de produto >> Pre-Pedido para cadastrar um Pre-Pedido (modulo=Inteligencia de Negocio; acao=cadastrar Pre-Pedido)
+- [procedimento] Clicar no icone de adicao (+) no canto inferior direito da tela para adicionar um Pre-Pedido (acao=adicionar Pre-Pedido)
+- [procedimento] Preencher os dados nas abas Dados do Pre-pedido, Clientes e Itens do pre-pedido (acao=preencher dados do Pre-pedido)
+- [procedimento] Salvar Pre-Pedido apos preencher os dados (acao=salvar Pre-Pedido)
+- [requisito] Preencher o campo Codigo na aba Dados do Pre-pedido (campo=Codigo)
+- [requisito] Preencher o campo Descricao na aba Dados do Pre-pedido (campo=Descricao)
+- [requisito] Preencher o campo Data Inicial na aba Dados do Pre-pedido (campo=Data Inicial)
+- [requisito] Preencher o campo Data Final na aba Dados do Pre-pedido (campo=Data Final)
+- [requisito] Preencher o campo Cor na aba Dados do Pre-pedido (campo=Cor)
+- [requisito] Preencher o campo Supervisor na aba Dados do Pre-pedido (campo=Supervisor)
+- [requisito] Preencher o campo Filial na aba Dados do Pre-pedido (campo=Filial)
+- [requisito] Preencher o campo Ramo de Atividade na aba Dados do Pre-pedido (campo=Ramo de Atividade)
+- [requisito] Preencher o campo Regiao na aba Dados do Pre-pedido (campo=Regiao)
+- [procedimento] Aplicar cor e ordenar produto
+- [requisito] Quando marcada, aplica a cor selecionada nos produtos e os ordena
+- [procedimento] Apresentar pop-up e ordenar produtos por cor
+- [requisito] Quando marcada, apresenta pop-up e ordena produtos pela cor
+- [requisito] Quando se utiliza o cadastro do ramo de atividade do fornecedor, os ramos de atividade serao apresentados agrupados pelo ramo de atividade do fornecedor vinculado
+- [procedimento] Realizar agrupamento de ramos de atividade (modulo=ERP Winthor; acao=rotina 2571)
+- [procedimento] Realizar agrupamento de ramos de atividade (modulo=Inteligencia de Negocios da Central de Configuracoes; acao=cadastro)
+- [requisito] Para clientes que utilizam outros ERPs
+- [requisito] A validacao no aplicativo continuara sendo feita pelo ramo de atividade do cliente
+- [procedimento] Selecionar e adicionar clientes (modulo=Aba 2: Clientes; acao=selecionar e adicionar)
+- [procedimento] Importar clientes (modulo=Aba 2: Clientes; acao=importar)
+- [requisito] Os clientes selecionados na Aba 2 terao acesso ao pre-pedido cadastrado
+- [procedimento] Preencher informacoes e adicionar itens (modulo=Aba 3: Itens do Pre-pedido; acao=adicionar)
+- [procedimento] Importar itens (modulo=Aba 3: Itens do Pre-pedido; acao=importar)
+- [requisito] Informar o Departamento a qual o item faz parte (campo=Departamento)
+- [procedimento] Exibir pop-up de pre-pedido ao iniciar um pedido (modulo=Aplicativo; acao=exibir pop-up)
+- [requisito] A opcao 'Apresentar pop-up e ordenar produtos por cor' deve estar habilitada (campo=Apresentar pop-up e ordenar produtos por cor)
+- [requisito] O parametro ORDENA_COR_PREPEDIDO deve estar habilitado (campo=ORDENA_COR_PREPEDIDO)
+- [requisito] O cliente deve ter o pre-pedido configurado
+- [procedimento] Exibir itens de pre-pedido na listagem de produtos da aba Tabela (modulo=Aplicativo; acao=exibir itens)
+- [requisito] Os itens de pre-pedido sao ordenados pela cor cadastrada (campo=cor cadastrada)
+- [requisito] Os itens de pre-pedido aparecem destacados na cor cadastrada (campo=cor cadastrada)
+- [procedimento] Definir quantidade maxima de itens permitidos em um pedido (modulo=Pedido; acao=definir quantidade maxima)
+- [requisito] A quantidade maxima de itens e configurada no parametro maxPedido (campo=maxPedido)
+- [requisito] Ao tentar inserir uma quantidade superior a cadastrada, o vendedor sera informado na tela de negociacao que a quantidade de produtos no pedido e o maximo permitido. (campo=quantidade de produtos)
+- [requisito] O parametro VERIFICAR_QTD_MAX_ITENS_PEDIDO valida a funcionalidade de quantidade maxima e deve ser Logico (habilitar). (campo=VERIFICAR_QTD_MAX_ITENS_PEDIDO)
+- [requisito] O parametro VERIFICAR_QTD_MAX_ITENS_PEDIDO_NRO define o numero maximo de itens permitidos e deve ser Numerico. (campo=VERIFICAR_QTD_MAX_ITENS_PEDIDO_NRO)
+- [requisito] Os parametros VERIFICAR_QTD_MAX_ITENS_PEDIDO e VERIFICAR_QTD_MAX_ITENS_PEDIDO_NRO sao complementares e precisam estar ambos configurados.
+- [procedimento] Acessar a Central de Configuracoes do maxPedido. (modulo=Central de Configuracoes; acao=acessar)
+- [procedimento] No menu lateral, clicar em Configuracoes > Parametros. (modulo=Configuracoes; acao=navegar)
+- [procedimento] Buscar pelos parametros VERIFICAR_QTD_MAX_ITENS_PEDIDO e VERIFICAR_QTD_MAX_ITENS_PEDIDO_NRO. (modulo=Parametros; acao=buscar)
+- [procedimento] Clicar em Pesquisar. (modulo=Parametros; acao=pesquisar)
+- [requisito] Nao e possivel pesquisar dois parametros ao mesmo tempo em filtro.
+- [procedimento] Clicar no icone de edicao na coluna Acoes a frente de cada parametro. (modulo=Parametros; acao=editar)
+- [procedimento] No parametro VERIFICAR_QTD_MAX_ITENS_PEDIDO, marcar a opcao para habilitar e clicar em Salvar. (modulo=Parametros; acao=habilitar e salvar)
+- [procedimento] No parametro VERIFICAR_QTD_MAX_ITENS_PEDIDO_NRO, informar a quantidade maxima de itens que poderao conter o pedido e clicar em Salvar. (modulo=Parametros; acao=configurar e salvar)
+- [requisito] Quantidade de itens no pedido nao pode exceder a quantidade cadastrada (campo=quantidade de itens)
+- [procedimento] Compartilhar um pedido ou um orcamento atraves de um arquivo PDF ou XLS (Excel) (modulo=maxPedido; acao=compartilhar pedido ou orcamento)
+- [procedimento] Acessar o menu Pedidos na tela inicial do aplicativo (modulo=Pedidos; acao=acessar menu)
+- [procedimento] Selecionar o pedido ou orcamento que deseja compartilhar dando um clique longo sobre o mesmo (modulo=Pedidos; acao=selecionar pedido ou orcamento)
+- [procedimento] Escolher a opcao Compartilhar no pop-up (modulo=Pedidos; acao=escolher opcao compartilhar)
+- [procedimento] Escolher entre as opcoes de arquivo (PDF ou XLS) e clicar em Gerar (modulo=Pedidos; acao=escolher formato do arquivo para compartilhamento)
+- [requisito] Escolher formato PDF ou XLS para compartilhamento (campo=formato do arquivo)
+- [procedimento] Aguardar a geracao do arquivo (modulo=Pedidos; acao=aguardar geracao do arquivo)
+- [requisito] Aguardar o carregamento de 100% da barra de progresso ao gerar arquivo
+- [procedimento] Compartilhar pedido ou orcamento via aplicativo (modulo=Aplicativo; acao=compartilhar)
+- [requisito] As opcoes de compartilhamento (WhatsApp, Email, etc.) aparecem apos a conclusao do processo
+- [procedimento] Configurar parametro EXIBIR_AGRUPAMENTO_FORNECEDOR (modulo=Central de Configuracoes; acao=configurar parametro)
+- [requisito] Para desativar o agrupamento de produtos por fornecedor, configurar EXIBIR_AGRUPAMENTO_FORNECEDOR como NAO (campo=EXIBIR_AGRUPAMENTO_FORNECEDOR)
+- [procedimento] Agrupar produtos por fornecedor no aplicativo: Menu Clientes > Selecionar cliente > Iniciar novo Pedido > Icone de tres pontos > 'Agrupar produtos por fornecedor' > Clicar sobre o Fornecedor para abrir a lista de produtos (modulo=Aplicativo; acao=agrupar produtos por fornecedor)
+- [procedimento] Expandir fornecedor para visualizar cabecalho (modulo=Fornecedor; acao=expandir)
+- [requisito] O cabecalho do fornecedor exibe a quantidade de produtos ideais (pre-pedido) (campo=Produtos Ideais)
+- [requisito] O cabecalho do fornecedor exibe a quantidade de produtos ideais (pre-pedido) do fornecedor que foram positivados (campo=Positivado (Ideais))
+- [requisito] O cabecalho do fornecedor exibe a quantidade total de produtos do fornecedor (campo=Total Produtos)
+- [requisito] O cabecalho do fornecedor exibe a quantidade total de produtos positivados do fornecedor (campo=Positivado (Total))
+- [procedimento] Desmembrar pedido automaticamente por filial retira (modulo=Pedido; acao=desmembrar)
+- [requisito] O pedido e desmembrado automaticamente quando produtos de diferentes filiais retira sao selecionados (campo=filial retira)
+- [requisito] O parametro DESMEMBRAR_PED_FILIAL_RETIRA deve estar habilitado para o desmembramento automatico por filial retira (campo=DESMEMBRAR_PED_FILIAL_RETIRA)
+- [procedimento] Acessar Central de Configuracoes > Configuracoes > Parametros (modulo=Central de Configuracoes; acao=acessar parametros)
+- [procedimento] Buscar pelo parametro DESMEMBRAR_PED_FILIAL_RETIRA (modulo=Central de Configuracoes; acao=buscar parametro)
+- [procedimento] Habilitar parametro DESMEMBRAR_PED_FILIAL_RETIRA (modulo=Central de Configuracoes; acao=habilitar parametro)
+- [procedimento] Salvar a configuracao (modulo=Central de Configuracoes; acao=salvar configuracao)
+- [procedimento] Acessar aba Tabela para selecionar itens após iniciar um pedido (modulo=Aplicativo; acao=selecionar itens)
+- [procedimento] Selecionar a filial retira desejada para o produto (modulo=Aplicativo; acao=selecionar filial retira)
+- [procedimento] Repetir a seleção de filial retira para os demais produtos (modulo=Aplicativo; acao=selecionar filial retira)
+- [procedimento] Salvar e Enviar o Pedido (modulo=Aplicativo; acao=salvar e enviar pedido)
+- [requisito] O aplicativo desmembrará automaticamente o pedido em um para cada filial retira selecionada, caso haja itens de filiais retira diferentes (campo=filial retira)
+- [requisito] Todas as validações serão realizadas no pedido original, não nos pedidos desmembrados
+- [requisito] Não é permitido utilizar nenhum tipo de autorização no processo de desmembramento de pedido por filial retira (campo=autorizacao)
+- [requisito] Pedidos que entrarem em processo de autorização não serão desmembrados (campo=autorizacao)
+- [procedimento] Verificar integracao de informacoes para clientes de Outros ERPs caso o status do pedido nao esteja atualizando no App
+- [procedimento] Garantir que o maxPedido envie a data de abertura do pedido (DTABERTURAPEDPALM) na tabela MXSINTEGRACAOPEDIDO
+- [procedimento] Garantir que o ERP devolva a data de abertura do pedido (DTABERTURAPEDPALM) na tabela MXSHISTORICOPEDC apos processar o pedido
+- [requisito] Para que a timeline de status do maxPedido funcione corretamente, a estrutura de dados deve estar configurada
+- [requisito] A coluna DTABERTURAPEDPALM deve ser preenchida na tabela MXSINTEGRACAOPEDIDO (campo=DTABERTURAPEDPALM)
+- [requisito] A coluna DTABERTURAPEDPALM deve ser devolvida pelo ERP na tabela MXSHISTORICOPEDC (campo=DTABERTURAPEDPALM)
+- [requisito] A coluna DTABERTURAPEDPALM sempre deve estar preenchida na tabela MXSHISTORICOPEDC (campo=DTABERTURAPEDPALM)
+- [procedimento] Verificar informacao no Layout de Integracao, item 5.48 - Historico Pedidos Capas (modulo=Layout de Integracao; acao=verificar informacao)
+- [requisito] Consultar a documentacao completa do Layout de Integracao para detalhes sobre a estrutura de dados e campos obrigatorios
+- [procedimento] Corrigir erro ao gerar arquivo do pedido (PDF/XLS) quando o arquivo nao esta carregando, relacionado ao componente WebView do Android (modulo=Sistema Android; acao=solucionar erro)
+- [requisito] Problema: Arquivo PDF ou XLS de pedido nao carrega
+- [procedimento] Acessar Configuracoes de Aplicativos no aparelho (modulo=Configuracoes do aparelho; acao=acessar aplicativos)
+- [requisito] Os icones de acesso podem mudar de nomenclatura de acordo com o modelo do aparelho
+- [procedimento] Desabilitar o Navegador Chrome (clicar em Desinstalar e confirmar a acao) (modulo=Aplicativo Chrome; acao=desabilitar)
+- [requisito] Navegador Chrome deve ser desabilitado para atualizar/instalar WebView
+- [procedimento] Atualizar ou Instalar WebView via Play Store (procurar pelo aplicativo WebView, atualizar se instalado ou instalar se nao encontrado) (modulo=Play Store; acao=atualizar/instalar WebView)
+- [requisito] Acesso a Play Store do aparelho
+- [procedimento] Reativar o Chrome apos atualizar/instalar WebView (modulo=Aplicativo Chrome; acao=reativar)
+- [requisito] WebView deve estar atualizado ou instalado antes de reativar o Chrome
+- [procedimento] Ativar novamente o aplicativo Chrome
+- [requisito] O componente Android System WebView deve estar atualizado para o maxPedido gerar PDF e XLS (campo=Android System WebView)
+- [procedimento] Desabilitar temporariamente o Chrome para atualizar ou reinstalar o Android System WebView (modulo=Chrome; acao=desabilitar temporariamente)
+- [procedimento] Configurar permissao de venda para clientes bloqueados (modulo=maxPedido; acao=configurar permissao de venda)
+- [requisito] Vendas para clientes bloqueados sao controladas por parametros (temporarios, rede, SEFAZ, definitivos) (campo=parametros de bloqueio)
+- [procedimento] Acessar a Central de Configuracoes do maxPedido (modulo=Central de Configuracoes; acao=acessar)
+- [procedimento] Clicar em Configuracoes no icone do lado esquerdo da tela (modulo=Central de Configuracoes; acao=clicar em Configuracoes)
+- [procedimento] Clicar em Parametros (modulo=Central de Configuracoes; acao=clicar em Parametros)
+- [procedimento] Pesquisar parametro na tela de Filtros Avancados (modulo=Filtros Avancados; acao=pesquisar parametro)
+- [requisito] Informar o parametro desejado para pesquisa (campo=parametro)
+- [procedimento] null
+- [requisito] O parametro ACEITAVENDAAVISTACLIBLOQ deve ser S (Sim) para aceitar venda a vista para cliente bloqueado. (campo=ACEITAVENDAAVISTACLIBLOQ)
+- [requisito] O parametro ACEITAR_DIGITAR_PEDIDO_CLIREDEBLOQUEADO deve ser S (Sim) para aceitar digitar pedido quando o cliente rede estiver bloqueado. (campo=ACEITAR_DIGITAR_PEDIDO_CLIREDEBLOQUEADO)
+- [requisito] O parametro BLOQUEAR_CONFECCAO_PEDIDO_CLIENTE_BLOQ deve ser N (Nao) para nao bloquear a confeccao de pedido para cliente bloqueado. (campo=BLOQUEAR_CONFECCAO_PEDIDO_CLIENTE_BLOQ)
+- [requisito] O parametro BLOQUEAR_CONFECCAO_PEDIDO_CLIENTE_PRINC_BLOQ deve ser N (Nao) para nao bloquear a confeccao de pedido para cliente rede bloqueado. (campo=BLOQUEAR_CONFECCAO_PEDIDO_CLIENTE_PRINC_BLOQ)
+- [requisito] O parametro VERIFICABLOQUEIOSEFAZ deve ser N (Nao) para permitir que usuario digite pedido de venda de cliente com restricao no SEFAZ. (campo=VERIFICABLOQUEIOSEFAZ)
+- [requisito] O parametro PERMITE_ORCAMENTO_CLIENTE_BLOQ deve ser S (Sim) para permitir que inicie Orcamento para cliente bloqueado. (campo=PERMITE_ORCAMENTO_CLIENTE_BLOQ)
+- [requisito] O parametro BLOQUEAR_CONFECCAO_PEDIDO_CLIENTE_BLOQ_DEFINITIVO deve ser N (Nao) para permitir iniciar pedido para cliente com bloqueio definitivo. (campo=BLOQUEAR_CONFECCAO_PEDIDO_CLIENTE_BLOQ_DEFINITIVO)
+- [requisito] Para clientes Winthor, o parametro CON_ACEITAVENDABLOQ deve ser S (Sim) no ERP para aceitar venda para cliente bloqueado. (campo=CON_ACEITAVENDABLOQ)
+- [requisito] O parametro ACEITAVENDAAVISTACLIBLOQ deve ser 'N (Nao)' (campo=ACEITAVENDAAVISTACLIBLOQ)
+- [requisito] O parametro ACEITAR_DIGITAR_PEDIDO_CLIREDEBLOQUEADO deve ser 'N (Nao)' (campo=ACEITAR_DIGITAR_PEDIDO_CLIREDEBLOQUEADO)
+- [requisito] O parametro BLOQUEAR_CONFECCAO_PEDIDO_CLIENTE_BLOQ deve ser 'S (Sim)' (campo=BLOQUEAR_CONFECCAO_PEDIDO_CLIENTE_BLOQ)
+- [requisito] O parametro BLOQUEAR_CONFECCAO_PEDIDO_CLIENTE_PRINC_BLOQ deve ser 'S (Sim)' (campo=BLOQUEAR_CONFECCAO_PEDIDO_CLIENTE_PRINC_BLOQ)
+- [requisito] O parametro VERIFICABLOQUEIOSEFAZ deve ser 'S (Sim)' (campo=VERIFICABLOQUEIOSEFAZ)
+- [requisito] O parametro PERMITE_ORCAMENTO_CLIENTE_BLOQ deve ser 'N (Nao)' (campo=PERMITE_ORCAMENTO_CLIENTE_BLOQ)
+- [requisito] O parametro BLOQUEAR_CONFECCAO_PEDIDO_CLIENTE_BLOQ_DEFINITIVO deve ser 'S (Sim)' (campo=BLOQUEAR_CONFECCAO_PEDIDO_CLIENTE_BLOQ_DEFINITIVO)
+- [requisito] Cliente bloqueado e exibido na listagem de clientes do representante com icone de cadeado
+- [requisito] Nao e possivel realizar venda para cliente bloqueado se configurado para nao permitir
+- [procedimento] Representante pode salvar orcamento para cliente bloqueado quando venda nao permitida (acao=salvar orcamento)
+- [requisito] Pedido e iniciado normalmente para cliente bloqueado se configurado para permitir venda
+- [requisito] A visibilidade de clientes com bloqueio definitivo na lista do representante e controlada por parametro
+- [requisito] Parametro LISTAR_CLIENTES_BLOQUEIO_DEFINITIVO = S permite visualizar cliente com bloqueio definitivo (campo=LISTAR_CLIENTES_BLOQUEIO_DEFINITIVO)
+- [requisito] Parametro LISTAR_CLIENTES_BLOQUEIO_DEFINITIVO = N impede visualizar cliente com bloqueio definitivo (campo=LISTAR_CLIENTES_BLOQUEIO_DEFINITIVO)
+- [requisito] Realizar configuracoes no ERP para o funcionamento correto das funcionalidades de bloqueio
+- [procedimento] Criar parametro atraves de opcao na tela de parametros caso nao seja encontrado
+- [procedimento] Verificar status de pedidos em outros ERPs (modulo=Integracao; acao=verificar status de pedido)
+- [requisito] Verificar se a data de abertura esta sendo retornada corretamente na tabela MXSHISTORICOPEDC (campo=DTABERTURAPEDPALM)
+- [requisito] Verificar pedido na tabela de integracao MXSINTEGRACAOPEDIDO
+- [procedimento] Verificar parametros de bloqueio de cliente no Winthor (modulo=Winthor; acao=verificar parametro)
+- [requisito] Verificar parametro 'CON_ACEITAVENDABLOQ' para aceitar venda para cliente bloqueado (campo=CON_ACEITAVENDABLOQ)
+- [procedimento] Definir pre-pedidos alinhados com campanhas e metas comerciais
+- [procedimento] Utilizar cores para diferenciar visualmente produtos estrategicos em pre-pedidos
+- [procedimento] Configurar datas de validade adequadas para cada campanha em pre-pedidos
+- [procedimento] Revisar periodicamente a performance dos pré-pedidos (acao=revisar performance)
+- [requisito] null
+- [procedimento] Utilizar agrupamento por fornecedor para facilitar a positivação (acao=utilizar agrupamento)
+- [procedimento] Definir limites de quantidade máxima de itens (acao=definir limites)
+- [requisito] Limites de quantidade máxima de itens devem ser baseados na capacidade logística
+- [procedimento] Comunicar os limites de quantidade máxima de itens para a equipe de vendas (acao=comunicar limites)
+- [procedimento] Revisar periodicamente a adequação dos limites de quantidade máxima de itens (acao=revisar limites)
+- [requisito] Exceções para pedidos especiais de quantidade máxima de itens requerem autorização
+- [procedimento] Orientar vendedores sobre o formato de compartilhamento de pedidos (PDF ou XLS) (acao=orientar vendedores)
+- [procedimento] Verificar a atualização do WebView nos aparelhos para compartilhamento de pedidos (modulo=aplicativo; acao=verificar atualização)
+- [procedimento] Utilizar o compartilhamento de pedidos para aprovações rápidas de clientes (acao=utilizar compartilhamento)
+- [procedimento] Manter o aplicativo atualizado para evitar erros no compartilhamento de pedidos (modulo=aplicativo; acao=manter atualização)
+- [requisito] Desmembramento por filial retira deve ser utilizado apenas quando a logística justificar
+- [procedimento] Orientar vendedores sobre o processo automático de desmembramento por filial retira (acao=orientar vendedores)
+- [requisito] Evitar desmembramento por filial retira para pedidos que necessitam autorização
+- [procedimento] Documentar as filiais retira ativas para desmembramento (acao=documentar filiais)
+- [procedimento] Definir política de vendas para clientes bloqueados (acao=definir política)
+- [procedimento] Configurar parâmetros alinhados com a política de crédito para clientes bloqueados (acao=configurar parâmetros)
+- [procedimento] Treinar vendedores sobre o procedimento com clientes bloqueados (acao=treinar vendedores)
+- [procedimento] Revisar periodicamente clientes com bloqueio definitivo (acao=revisar clientes)
+- [requisito] Parametro UTILIZA_PRE_PEDIDO deve estar habilitado (campo=UTILIZA_PRE_PEDIDO)
+- [requisito] Parametro deve estar configurado para a Filial correta (campo=Filial)
+- [requisito] Cliente deve estar incluido na aba Clientes do pre-pedido (campo=Clientes do pre-pedido)
+- [requisito] Data de validade do pre-pedido deve estar vigente (campo=data de validade)
+- [requisito] Supervisor configurado deve ter acesso ao vendedor (campo=acesso do supervisor)
+- [requisito] Parametros VERIFICAR_QTD_MAX_ITENS_PEDIDO e VERIFICAR_QTD_MAX_ITENS_PEDIDO_NRO devem estar configurados (campo=VERIFICAR_QTD_MAX_ITENS_PEDIDO, VERIFICAR_QTD_MAX_ITENS_PEDIDO_NRO)
+- [requisito] Parametro VERIFICAR_QTD_MAX_ITENS_PEDIDO deve estar habilitado (valor logico) (campo=VERIFICAR_QTD_MAX_ITENS_PEDIDO)
+- [requisito] Parametro VERIFICAR_QTD_MAX_ITENS_PEDIDO_NRO deve ter um valor numerico valido (campo=VERIFICAR_QTD_MAX_ITENS_PEDIDO_NRO)
+- [procedimento] Reiniciar o aplicativo para carregar as novas configuracoes (acao=reiniciar aplicativo)
+- [procedimento] Desabilitar o navegador Chrome temporariamente (acao=desabilitar Chrome)
+- [procedimento] Acessar a Play Store e atualizar o Android System WebView (acao=atualizar Android System WebView)
+- [procedimento] Instalar Android System WebView se nao encontrado na Play Store (acao=instalar Android System WebView)
+- [procedimento] Reativar o navegador Chrome (acao=reativar Chrome)
+- [procedimento] Verificar se a coluna DTABERTURAPEDPALM esta preenchida na tabela MXSHISTORICOPEDC (modulo=Integração; acao=verificar preenchimento de coluna)
+- [requisito] A coluna DTABERTURAPEDPALM deve estar preenchida na tabela MXSHISTORICOPEDC para atualização de status de pedido (campo=DTABERTURAPEDPALM)
+- [procedimento] Verificar se o ERP esta retornando a mesma data enviada na MXSINTEGRACAOPEDIDO (modulo=Integração; acao=verificar retorno de data)
+- [requisito] O ERP deve retornar a mesma data enviada na MXSINTEGRACAOPEDIDO para atualização de status de pedido (campo=data de integração)
+- [procedimento] Consultar o Layout de Integracao item 5.48 para validar a estrutura (modulo=Integração; acao=validar estrutura)
+- [requisito] A estrutura de integração deve seguir o Layout de Integração item 5.48 (campo=estrutura de integração)
+- [procedimento] Verificar logs de integracao do ERP (modulo=Integração; acao=verificar logs)
+- [requisito] Logs de integração do ERP devem ser verificados para diagnosticar problemas de atualização de status de pedido
+- [procedimento] Contatar o suporte tecnico para revisar as APIs de integracao (modulo=Suporte; acao=revisar APIs de integração)
+- [requisito] O suporte técnico deve revisar as APIs de integração em caso de problemas persistentes de atualização de status de pedido
+- [procedimento] Verificar se o pedido nao esta em processo de autorizacao (modulo=Pedidos; acao=verificar status de autorização)
+- [requisito] Pedidos em autorizacao nao sao desmembrados (campo=status do pedido)
+- [procedimento] Verificar se realmente foram selecionadas filiais retira diferentes (modulo=Pedidos; acao=verificar filiais de retirada)
+- [requisito] Para desmembramento, e necessario selecionar filiais retira diferentes (campo=filial de retirada)
+- [procedimento] Verificar se o parametro DESMEMBRAR_PED_FILIAL_RETIRA esta habilitado corretamente (modulo=Configuração; acao=verificar parametro)
+- [requisito] O parametro DESMEMBRAR_PED_FILIAL_RETIRA deve estar habilitado corretamente para que o desmembramento ocorra (campo=DESMEMBRAR_PED_FILIAL_RETIRA)
+- [procedimento] Reiniciar o aplicativo (modulo=Sistema; acao=reiniciar aplicativo)
+- [requisito] Reiniciar o aplicativo pode resolver problemas de desmembramento
+- [procedimento] Revisar todos os parametros de bloqueio listados neste documento (modulo=Configuração; acao=revisar parametros de bloqueio)
+- [requisito] Todos os parametros de bloqueio devem ser revisados para garantir o correto funcionamento do bloqueio de clientes
+- [procedimento] Verificar se ha conflito entre parametros (alguns em SIM e outros em NAO) (modulo=Configuração; acao=verificar conflito de parametros)
+- [requisito] Nao deve haver conflito entre parametros de bloqueio (alguns em SIM e outros em NAO) para evitar comportamentos inesperados (campo=parametros de bloqueio)
+- [procedimento] Para clientes Winthor, verificar o parametro CON_ACEITAVENDABLOQ no ERP (modulo=ERP Winthor; acao=verificar parametro)
+- [requisito] O parametro CON_ACEITAVENDABLOQ no ERP Winthor controla a aceitacao de venda para clientes bloqueados (campo=CON_ACEITAVENDABLOQ)
+- [requisito] Verificar se o tipo de bloqueio (temporario, SEFAZ, definitivo) esta sendo tratado corretamente
+- [procedimento] Sincronizar o aplicativo para carregar as configuracoes atualizadas
+- [requisito] Parametro CON_ACEITAVENDABLOQ deve ser configurado no ERP Winthor para aceitar venda para cliente bloqueado (S/N) (campo=CON_ACEITAVENDABLOQ)
+- [procedimento] Configurar Rotina 2571 no ERP Winthor para agrupamento de ramo de atividade por fornecedor (modulo=Winthor; acao=configurar Rotina 2571)
+- [requisito] Tabela MXSINTEGRACAOPEDIDO e utilizada para receber pedidos do maxPedido em integracoes com outros ERPs via API (campo=MXSINTEGRACAOPEDIDO)
+- [requisito] Tabela MXSHISTORICOPEDC e utilizada para retornar historico de status dos pedidos em integracoes com outros ERPs via API (campo=MXSHISTORICOPEDC)
+- [requisito] Campo DTABERTURAPEDPALM deve ser devolvido corretamente para atualizar timeline em integracoes com outros ERPs via API (campo=DTABERTURAPEDPALM)
+- [procedimento] Consultar Layout de Integracao para detalhes completos da estrutura de dados em integracoes com outros ERPs via API
+- [procedimento] Consultar documentacao especifica item 5.48 (Historico Pedidos Capas) no Layout de Integracao
+- [procedimento] Consultar documentacao de criacao de parametros no maxPedido
+- [procedimento] Rotina 2571: Agrupamento de ramo de atividade por fornecedor (modulo=Rotinas; acao=agrupamento de ramo de atividade)
+- [procedimento] Integracao de pedidos (entrada) utiliza a tabela MXSINTEGRACAOPEDIDO (modulo=Integracao; acao=entrada de pedidos)
+- [procedimento] Historico de pedidos (saida) e registrado na tabela MXSHISTORICOPEDC (modulo=Historico; acao=saida de pedidos)
+- [procedimento] Parametros do Winthor sao armazenados na tabela PCPARAMETROS (modulo=Winthor; acao=parametrizacao)

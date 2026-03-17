@@ -1,0 +1,282 @@
+# Revisao de Documento Local: BASE DE PARAMETROS MÁXIMA TECH.pdf
+
+## Fonte
+- C:\revive-claude\bot-maxima\documentos\langextract\BASE DE PARAMETROS MÁXIMA TECH.pdf
+
+## Metadados
+- Tipo detectado: `pdf`
+- Gerado em: `2026-02-12T16:49:27.699415+00:00`
+- Fatos extraidos (LangExtract): `316`
+
+## Conhecimento Extraido
+[LangExtract] Fatos estruturados extraidos:
+- [procedimento] Habilitar o parâmetro GPS_TRACKING_ENABLED (modulo=Configuração; acao=habilitar GPS tracking)
+- [requisito] A habilitação do GPS_TRACKING_ENABLED permite o rastreamento dos RCA’s e a geração da base maxTracking
+- [procedimento] Configurar o parâmetro GPS_TRACKING_INTERVAL (modulo=Configuração; acao=definir intervalo GPS)
+- [requisito] O valor padrão do GPS_TRACKING_INTERVAL é 5 segundos para envio de coordenadas (campo=intervalo de envio)
+- [procedimento] Habilitar o parâmetro CONFIRMA_ATUALIZACAO_COORDENADA_CLIENTE (modulo=Configuração; acao=habilitar confirmação GPS cliente)
+- [requisito] Ao término da confecção de um pedido, o sistema questionará o usuário sobre a atualização das informações de GPS do cliente
+- [requisito] O parâmetro CONFIRMA_ATUALIZACAO_COORDENADA_CLIENTE atua em conjunto com a permissão 'SOLICITAR AUTORIZAÇÃO PARA ALTERAR COORDENADAS DO CLIENTE' na Central de Configurações
+- [procedimento] Habilitar o parâmetro UTILIZA_CHECKIN_CHECKOUT (modulo=Configuração; acao=habilitar check-in/check-out)
+- [requisito] A habilitação do UTILIZA_CHECKIN_CHECKOUT permite a utilização de Check-in e Check-out no maxPedido
+- [procedimento] Habilitar o parâmetro PERMITIR_PEDIDO_SEM_CHECKIN (modulo=Configuração; acao=permitir pedido sem check-in)
+- [requisito] A habilitação do PERMITIR_PEDIDO_SEM_CHECKIN permite realizar pedidos sem efetuar check-in para o cliente (campo=check-in)
+- [procedimento] Habilitar o parâmetro SOMAR_JUROS_TITULOS (modulo=Configuração; acao=somar juros em títulos)
+- [requisito] A habilitação do SOMAR_JUROS_TITULOS fará com que o valor do Juros seja somado automaticamente no valor do Título
+- [requisito] Com o parâmetro SOMAR_JUROS_TITULOS habilitado, o RCA não terá necessidade de fazer contas de juros manualmente
+- [procedimento] Habilitar a opção de relatórios customizados no Central de Configurações do maxPedido (modulo=Central de Configurações do maxPedido; acao=habilitar relatórios customizados)
+- [requisito] O parâmetro HABILITAR_GERADOR_RELATORIOS deve ser 'S' (campo=HABILITAR_GERADOR_RELATORIOS)
+- [procedimento] Dedução de devoluções na apuração dos resultados de metas
+- [requisito] O sistema deduz as devoluções na venda líquida (campo=CRITERIOVENDAFDEDUZIRDEV)
+- [procedimento] Dedução de devoluções avulsas na apuração dos resultados de metas
+- [requisito] O sistema deduz as devoluções avulsas na apuração dos resultados de metas (campo=CRITERIOVENDAFCONSIDERADEVAVULSA)
+- [procedimento] Iniciar pedido para cliente bloqueado (modulo=Pedido; acao=iniciar pedido)
+- [requisito] O parâmetro ACEITAVENDAAVISTACLIBLOQ deve ser 'S' (campo=ACEITAVENDAAVISTACLIBLOQ)
+- [procedimento] Salvar pedido para cliente bloqueado (modulo=Pedido; acao=salvar pedido)
+- [requisito] O plano de pagamento deve ser 'A VISTA' (campo=plano de pagamento)
+- [requisito] A cobrança deve ser Dinheiro (D), Dinheiro em trânsito (DH) ou Cartão (CAR) (campo=cobrança)
+- [procedimento] Realizar check-in para cliente fora do roteiro do dia (modulo=Check-in; acao=realizar check-in)
+- [requisito] O parâmetro OBRIGA_CHECKIN_CLIENTE_FORA_ROTA deve estar ativo (campo=OBRIGA_CHECKIN_CLIENTE_FORA_ROTA)
+- [procedimento] Realizar check-in para qualquer cliente (modulo=Check-in; acao=realizar check-in)
+- [requisito] O cliente não deve ter nenhum roteiro no dia
+- [procedimento] Configurar o limite do raio para efetuar Check-in e Check-out no cliente (modulo=Check-in/Check-out; acao=configurar limite de raio)
+- [requisito] É necessário configurar o parâmetro LIMITE_RAIO_CHECK_IN_OUT (campo=LIMITE_RAIO_CHECK_IN_OUT)
+- [requisito] O check-in ou check-out só pode ser realizado quando o representante estiver dentro de um raio de 100 metros da localização cadastrada do cliente.
+- [requisito] Não é permitido fazer pedido se o cliente estiver bloqueado, caso o parâmetro BLOQUEAR_CONFECCAO_PEDIDO_CLIENTE_BLOQ esteja habilitado. (campo=BLOQUEAR_CONFECCAO_PEDIDO_CLIENTE_BLOQ)
+- [requisito] Ao iniciar um pedido em um cliente que possua títulos vencidos, o RCA será alertado através de uma pop-up, caso o parâmetro ALERTAR_TIT_VENCIDO esteja habilitado. (campo=ALERTAR_TIT_VENCIDO)
+- [requisito] A quantidade de dias que o cliente inadimplente terá seu pedido bloqueado é definida pelo parâmetro NUMERO_DIAS_CLIENTE_INADIMPLENTE. (campo=NUMERO_DIAS_CLIENTE_INADIMPLENTE)
+- [requisito] A realização de pedido é bloqueada para clientes com títulos em aberto (inadimplentes), caso o parâmetro BLOQUEIA_PEDIDO_CLIENTE_INADIMPLENTE esteja habilitado. (campo=BLOQUEIA_PEDIDO_CLIENTE_INADIMPLENTE)
+- [requisito] Não é permitido que o representante inicie o pedido sem que o GPS esteja habilitado, caso o parâmetro GPS_IS_REQUIRED_CONFEC_PEDIDO esteja habilitado. (campo=GPS_IS_REQUIRED_CONFEC_PEDIDO)
+- [procedimento] Configurar o tempo mínimo de atendimento do representante ao cliente (modulo=MXSPARAMETRO; acao=configurar)
+- [requisito] O valor do parâmetro TEMPO_MIN_PERMANENCIA deve conter 5 caracteres, incluindo os dois pontos (Ex: 00:10) (campo=TEMPO_MIN_PERMANENCIA)
+- [requisito] O tempo mínimo entre o check-in e check-out será o configurado em TEMPO_MIN_PERMANENCIA (campo=TEMPO_MIN_PERMANENCIA)
+- [procedimento] Habilitar o parâmetro OBRIGAR_ATENDIMENTO_PARA_CHECKOUT (modulo=MXSPARAMETRO; acao=habilitar)
+- [requisito] Quando OBRIGAR_ATENDIMENTO_PARA_CHECKOUT estiver habilitado, o maxPedido não permitirá fazer check-out sem atendimento no cliente (campo=OBRIGAR_ATENDIMENTO_PARA_CHECKOUT)
+- [requisito] Atendimento pode ser um pedido ou uma justificativa de não venda
+- [procedimento] Configurar a quantidade máxima de pedidos fora de rota (modulo=MXSPARAMETRO; acao=configurar)
+- [requisito] O maxPedido aceitará no máximo a quantidade configurada em QTD_MAX_PED_FORA_ROTA de pedidos fora de rota (campo=QTD_MAX_PED_FORA_ROTA)
+- [requisito] Se QTD_MAX_PED_FORA_ROTA for configurado com valor 0, o parâmetro não será validado (campo=QTD_MAX_PED_FORA_ROTA)
+- [procedimento] Configurar o período para zerar a validação da quantidade máxima de pedidos fora de rota (modulo=MXSPARAMETRO; acao=configurar)
+- [requisito] Se PERIODO_PED_FORA_ROTA for 0, a validação da quantidade máxima de pedidos fora de rota ocorre no dia atual (campo=PERIODO_PED_FORA_ROTA)
+- [requisito] O parametro PESQUISAR_PEDIDO_APARELHO_COM_HISTORICO habilita a visualizacao dos pedidos do historico na timeline de pedidos. (campo=pedidos do historico na timeline)
+- [requisito] O parametro HABILITAR_DADOS_ENTREGA habilita o acompanhamento de entrega dentro da timeline de pedidos. (campo=acompanhamento de entrega)
+- [requisito] O acompanhamento de entrega na timeline de pedidos so e habilitado se o sistema tiver maxMotorista.
+- [requisito] O parametro EXIBIR_PRECO_UNIT_EMB exibe o preco unitario do pedido no layout padrao do espelho do pedido. (campo=preco unitario)
+- [requisito] O parametro APRESENTAR_DESCONTOS_PEDIDO_EMAIL exibe os campos de desconto (VL DESC, % DESC) no layout padrao do espelho do pedido. (campo=VL DESC, % DESC)
+- [requisito] O parametro OCULTAR_IMPOSTOS_PEDIDO_EMAIL oculta os impostos do pedido no layout padrao do espelho do pedido. (campo=impostos)
+- [requisito] O parametro OCULTAR_VALIDADE_PROPOSTA oculta o campo de validade proposta no layout padrao do espelho do pedido. (campo=validade proposta)
+- [requisito] O parametro EXIBIR_FOTO_DO_PRODUTO_PDF exibe as fotos dos produtos no layout padrao do espelho do pedido. (campo=fotos dos produtos)
+- [procedimento] Exibir fotos dos produtos no layout personalizado do espelho do pedido (modulo=Pedido; acao=exibir foto)
+- [requisito] O parametro EXIBIR_FOTO_DO_PRODUTO_PERSONALIZADO_PDF deve estar habilitado (campo=EXIBIR_FOTO_DO_PRODUTO_PERSONALIZADO_PDF)
+- [procedimento] Salvar pedidos sem filialNF (modulo=Pedido; acao=salvar pedido)
+- [requisito] A permissao para selecionar filialNF via spinner na apk deve estar habilitada (campo=PERMITE_FILIAL_NF_NULA)
+- [procedimento] Definir FilialNF (modulo=Pedido; acao=definir filialNF)
+- [requisito] FilialNF sera identica a filial do cabecalho se o parametro COMPORTAMENTO_WHINTOR_FILIAL for 'S' (campo=COMPORTAMENTO_WHINTOR_FILIAL)
+- [procedimento] Utilizar preco da regiao do cliente (modulo=Preco; acao=aplicar preco)
+- [requisito] O parametro GRAVAR_FILIAL_NF_NULO deve ser 'S' (campo=GRAVAR_FILIAL_NF_NULO)
+- [requisito] O cliente nao tem uma filial NF definida (campo=filial NF do cliente)
+- [requisito] O pedido nao tem filial NF definida (campo=filial NF do pedido)
+- [procedimento] Ativar campanha de desconto progressivo (modulo=Campanha; acao=ativar campanha)
+- [requisito] O parametro USAR_CAMPANHA_DESCONTO_PROGRESSIVO deve estar habilitado (campo=USAR_CAMPANHA_DESCONTO_PROGRESSIVO)
+- [procedimento] Habilitar integracao com maxPesquisa (modulo=Integracao; acao=habilitar integracao)
+- [requisito] O parametro HABILITA_MAXPESQUISA deve estar habilitado (campo=HABILITA_MAXPESQUISA)
+- [procedimento] Enviar dados de titulos para a nuvem (modulo=Sincronizacao; acao=enviar dados)
+- [requisito] Somente os dados de titulos vencidos serao enviados para a nuvem (campo=ENVIAR_APENAS_TITULOS_VENCIDOS)
+- [procedimento] Digitar pedido de cliente recém cadastrado sem atualização no ERP (habilitado por HABILITA_PED_CLI_NAO_SINC) (modulo=Pedidos; acao=digitar pedido)
+- [requisito] Realizar swipe na timeline de pedidos para resolver duplicidade de clientes gerada por HABILITA_PED_CLI_NAO_SINC (campo=timeline de pedidos)
+- [requisito] Não apresentar o espelho do pedido padrão se DESABILITAR_ESPELHO_PED_PADRAO estiver habilitado e houver layout customizado (campo=espelho do pedido)
+- [requisito] Aceitar aplicar desconto em Política de Preço Fixo (controlado por CON_ACEITADESCPRECOFIXO) (campo=desconto em Política de Preço Fixo)
+- [requisito] Definir se utiliza o processo de conta corrente (controlado por CON_USACREDRCA) (campo=conta corrente)
+- [procedimento] Exibir o valor do saldo de Conta Corrente disponível nos campos referentes à CC (controlado por EXIBIR_SALDOCC_DISPONIVEL) (modulo=Conta Corrente; acao=exibir saldo)
+- [requisito] Apresentar dois traços no lugar de Saldo de Conta Corrente se EXIBIR_SALDOCC_DISPONIVEL estiver desabilitado (campo=Saldo de Conta Corrente)
+- [requisito] Apresentar o card de conta corrente na tela inicial do maxPedido se USADEBCREDRCA do RCA for 'S' e APRESENTAR_CARD_CC estiver habilitado (campo=card de conta corrente)
+- [requisito] O card não será apresentado se o parâmetro estiver desabilitado, mesmo se o RCA utiliza o processo de Conta Corrente.
+- [procedimento] Sincronizar movimentações de conta corrente usando o parâmetro GERAR_DADOS_CC_RCA (modulo=Conta Corrente; acao=sincronizar movimentações)
+- [requisito] A sincronização de movimentações de conta corrente inicialmente abrange apenas os últimos 7 dias.
+- [requisito] Pedidos salvos como bloqueados ou pendentes (Offline) podem influenciar no saldo de Conta Corrente, dependendo do parâmetro DESCONTA_SALDOCCRCA_OFFLINE.
+- [requisito] O uso do parâmetro DESCONTA_SALDOCCRCA_OFFLINE pode causar divergência entre o saldo de conta corrente no aparelho e no ERP.
+- [requisito] Para utilizar o desconto progressivo como Campanha Progressiva, o parâmetro TIPO_DESC_PROGRESSIVO deve ter o valor 'PRG'. (campo=TIPO_DESC_PROGRESSIVO)
+- [requisito] Para utilizar o desconto progressivo como Campanha P&G, o parâmetro TIPO_DESC_PROGRESSIVO deve ter o valor 'PEG'. (campo=TIPO_DESC_PROGRESSIVO)
+- [requisito] Se o parâmetro IMPEDIR_ABATIMENTO_SEMSALDORCA for 'N', é permitido debitar saldo de Conta Corrente do RCA mesmo que esteja negativo. (campo=IMPEDIR_ABATIMENTO_SEMSALDORCA)
+- [procedimento] Listar planos de pagamento ao cadastrar um novo cliente usando o parâmetro LISTAR_TODOS_PLANOS_PAGAMENTO. (modulo=Cadastro de Cliente; acao=listar planos de pagamento)
+- [procedimento] Ordenar a lista do plano de pagamento usando o parâmetro ORDENACAO_PLANO_PAGAMENTO. (modulo=Plano de Pagamento; acao=ordenar lista)
+- [requisito] Quando o parâmetro DESATIVA_VALIDACAO_CNPJ_CADASTRADO está habilitado, a validação de CNPJ/CPF de cliente existente no Winthor não é realizada. (campo=DESATIVA_VALIDACAO_CNPJ_CADASTRADO)
+- [requisito] Se o parâmetro DESATIVA_VALIDACAO_CNPJ_CADASTRADO estiver habilitado, o representante pode salvar e enviar o cadastro do cliente realizado no aplicativo mesmo que o CNPJ/CPF já exista. (campo=DESATIVA_VALIDACAO_CNPJ_CADASTRADO)
+- [requisito] O parâmetro CLIENTESIMPLESNACIONAL_SIM define se a opção 'Cliente Simples Nacional' é 'sim' por padrão. (campo=CLIENTESIMPLESNACIONAL_SIM)
+- [requisito] O parâmetro BLOQUEAR_SALVAR_PEDIDO_SEMSALDORCA bloqueia a gravação de pedidos por RCA que não possuem saldo de conta corrente flexível. (campo=BLOQUEAR_SALVAR_PEDIDO_SEMSALDORCA)
+- [procedimento] Se o parâmetro PERMITE_INICIAR_PEDIDO_COMO_ORCAMENTO_NAO_MOV_CC estiver cadastrado e definido como 'S', ao iniciar um pedido, a aplicação questionará se o usuário deseja iniciar um pedido de orçamento. (modulo=aplicação; acao=iniciar pedido)
+- [requisito] Se o parâmetro PERMITE_INICIAR_PEDIDO_COMO_ORCAMENTO_NAO_MOV_CC estiver cadastrado com valor 'S', o saldo da conta corrente não é movimentado em pedidos de orçamento. (campo=PERMITE_INICIAR_PEDIDO_COMO_ORCAMENTO_NAO_MOV_CC)
+- [procedimento] Se o parâmetro PERMITE_INICIAR_PEDIDO_COMO_ORCAMENTO_NAO_MOV_CC estiver cadastrado, porém sem nenhum valor, a aplicação iniciará o pedido e a definição de pedido normal ou orçamento será feita dentro da negociação. (modulo=negociação; acao=definir tipo de pedido)
+- [procedimento] null
+- [requisito] A cobrança DH pode trabalhar a prazo se o parâmetro VALIDAR_PRAZOMEDIO_COBRANCA_DH for configurado como 'N'.
+- [requisito] A inserção de itens sem estoque é bloqueada se o parâmetro BLOQUEAR_INSERIR_ITEM_SEM_ESTOQUE estiver ativo.
+- [requisito] O sistema impede a venda de itens acima do estoque disponível se o parâmetro BLOQUEAR_VENDA_ACIMA_DO_ESTOQUE for 'S'.
+- [requisito] A filial de Nota Fiscal do cliente é utilizada para definir a tributação se o parâmetro USA_FILIALNF_CLIENTE_PARA_DEFINIR_TRIBUTACAO estiver ativo.
+- [requisito] É possível adicionar o mesmo item várias vezes no pedido se o parâmetro TRUNCAR_ITEM_PCPEDI for 'S'.
+- [requisito] A embalagem 'KG' é ocultada no processo de Frios quando o parâmetro USA_EMBALAGEM_UNIDADE_PADRAO está habilitado.
+- [procedimento] Deletar o histórico de compromissos (compromissos do dia anterior) caso a funcionalidade esteja habilitada
+- [requisito] A funcionalidade de deletar o histórico de compromissos (compromissos do dia anterior) deve estar habilitada para que a exclusão ocorra.
+- [procedimento] Iniciar pedido para clientes recém cadastrados (pré-cadastro)
+- [requisito] É permitido iniciar pedido para clientes recém cadastrados (pré-cadastro) que ainda não tiveram aprovação do cadastro no ERP, se o parâmetro HABILITA_PED_CLI_RECEM_CADASTRADO estiver ativo.
+- [procedimento] Vincular pedido TV1 no pedido de bonificação
+- [requisito] É obrigatório o vínculo de pedido TV1 no pedido de bonificação, conforme o parâmetro OBRIGATORIOVINCULARTV5COMTV1.
+- [procedimento] Solicitar aprovação de TV5 no maxGestão ao vincular um pedido TV1 em um TV5 ou ao gerar TV5 depois do TV1 na aba de cabeçalho (modulo=maxGestão; acao=solicitar aprovação de TV5)
+- [requisito] A solicitação de aprovação do TV5 é ativada se o parâmetro PEDIR_AUTORIZACAO_TV5_VINCULADO_TV1 estiver habilitado e o usuário tiver a permissão 'solicitar autorização de pedido bonificado'.
+- [procedimento] Preencher a opção 'Cliente Contribuinte' no cadastro do cliente
+- [requisito] No cadastro do cliente, a opção 'Cliente Contribuinte' virá por padrão 'Sim'. (campo=Cliente Contribuinte)
+- [procedimento] Exibir títulos pagos na consulta de títulos
+- [requisito] Os títulos pagos que estão na base da APK serão exibidos na tela de títulos pagos na consulta de títulos, caso o parâmetro EXIBIRTITULOSPAGOS esteja habilitado.
+- [requisito] Bloquear lupa de pesquisa (Botão de Filtros) na tela de Resumo de Vendas, aba RESUMO. (campo=lupa de pesquisa (Botão de Filtros))
+- [requisito] Quando o RCA inserir um produto na aba tabela que está cadastrado em uma campanha da rotina 3306, o sistema irá notificar informando que o produto faz parte de uma campanha de desconto. (campo=produto em campanha)
+- [requisito] Ao ser habilitado, oculta o menu de comissão da tela inicial do aplicativo. (campo=menu de comissão)
+- [requisito] Caso o parâmetro BLOQUEIA_PEDIDO_CLIENTE_SEMLIMITE esteja habilitado e o cliente não tenha limite, o pedido será feito, porém ficará bloqueado na APK e não será enviado para o banco nuvem. (campo=limite de crédito do cliente)
+- [procedimento] Assim que a situação for normalizada, o usuário deverá editar o pedido ou duplicar o mesmo. (acao=editar pedido ou duplicar pedido)
+- [requisito] Valida restrições de brinde na tela de Políticas de brinde da negociação do produto. (campo=restrições de brinde)
+- [requisito] O parâmetro CALCULAR_ST_SAIDA visa identificar a alíquota de ST Saída cadastrada nos campos MXSTRIBUT.ALIQSTSAIDA e MXSTRIBUT.ALIQSTSAIDAPF. (campo=alíquota de ST Saída)
+- [requisito] O parâmetro CON_PEREXCEDELIMCRED do ERP Winthor configura um percentual máximo permitido para exceder o limite de crédito do cliente na venda (campo=CON_PEREXCEDELIMCRED)
+- [requisito] O parâmetro CON_PEREXCEDELIMCRED funciona no maxPedido (campo=CON_PEREXCEDELIMCRED)
+- [requisito] A configuração do parâmetro CON_PEREXCEDELIMCRED, quando ativada, funciona para todos os RCAs, sem possibilidade de exceções (campo=CON_PEREXCEDELIMCRED)
+- [requisito] O parâmetro CON_CODPLPAGINICIAL do ERP Winthor define o plano de pagamento padrão ao cadastrar clientes pelo força de vendas (campo=CON_CODPLPAGINICIAL)
+- [requisito] O parâmetro CON_USATROCACOMPRECOVENDA do ERP Winthor, quando ativado (S), grava as mercadorias a retirar com custo financeiro para trocas dos tipos de venda 11 e 12 (campo=CON_USATROCACOMPRECOVENDA)
+- [requisito] Quando o parâmetro CON_USATROCACOMPRECOVENDA do ERP Winthor está desativado (N), usa o preço de venda do item na troca (campo=CON_USATROCACOMPRECOVENDA)
+- [requisito] O parâmetro CON_VLMAXVENDAPF do ERP Winthor configura um valor máximo que pode ser realizado através de pedidos para cliente pessoa física no Mês (campo=CON_VLMAXVENDAPF)
+- [procedimento] Habilitar a recomendação de produto no maxPedido através da inteligência artificial (IA) usando o parâmetro HABILITA_RECOMENDACAO_PRODUTOS (modulo=maxPedido; acao=habilitar recomendação de produto)
+- [requisito] A recomendação de produtos gera dados 24h após a ativação do parâmetro HABILITA_RECOMENDACAO_PRODUTOS (campo=HABILITA_RECOMENDACAO_PRODUTOS)
+- [procedimento] Realiza cálculo com a quantidade informada x múltiplo do produto (modulo=Geral/Usuário MXSPARAMETRO; acao=cálculo de quantidade)
+- [requisito] Pode ser usado em conjunto com o parâmetro INICIA_QTDE_UM
+- [procedimento] Define se sinaliza clientes sem comprar a X dias (modulo=Geral/Usuário MXSPARAMETRO; acao=sinalização de cliente)
+- [requisito] Trabalha em conjunto com o parâmetro QT_DIAS_SINALIZAR_CLIENTE
+- [procedimento] Habilita soma da multa no saldo de títulos na aba de títulos pendentes (modulo=Geral/Usuário MXSPARAMETRO; acao=habilitar soma de multa)
+- [requisito] null
+- [procedimento] Define tempo em minutos para o envio automático de pedidos (modulo=Geral/Usuário MXSPARAMETRO; acao=configurar envio automático de pedidos)
+- [requisito] Validado somente na APK
+- [procedimento] Define se aceita ou bloqueia fazer pedidos quando clientes da rede estiverem bloqueados (modulo=Geral/Usuário MXSPARAMETRO; acao=controle de pedidos para clientes bloqueados)
+- [procedimento] Define se bloqueia ou não venda para clientes bloqueados (modulo=Geral MXSPARAMFILIAL; acao=controle de venda para clientes bloqueados)
+- [procedimento] Agrupa a apresentação dos clientes positivados por fornecedores na guia de Consultas (modulo=Geral/Usuário MXSPARAMETRO; acao=agrupamento de clientes positivados)
+- [requisito] Estar ativado para agrupar clientes positivados por fornecedores
+- [requisito] O RCA será alertado via pop-up ao iniciar um pedido de vendas para um cliente com títulos inadimplentes.
+- [requisito] Exibir os títulos em aberto apenas das filiais permitidas.
+- [requisito] O sistema questiona sobre a aplicação da campanha de desconto da rotina 561.
+- [requisito] Se o parâmetro APRESENTAR_MSG_POS_ENVIO for 'S', o recado enviado pelo RCA ficará visível em Mensagens / Caixa de Saída.
+- [requisito] Quando ativado, o sistema gera um alerta mostrando que o produto tem embalagem master.
+- [requisito] Habilita a atualização do limite de crédito do cliente logo após o envio de pedido.
+- [requisito] Habilita a exibição do CNPJ do cliente na listagem de clientes. (campo=CNPJ)
+- [requisito] As fotos de produto na APK devem ser baixadas apenas se houver conexão Wi-Fi.
+- [requisito] Considera orçamento bloqueado para envio como pendente
+- [requisito] Considera pedido bloqueado para envio como pendente
+- [requisito] Bloqueio de pedidos - Intervalo entre conexões para bloquear novo pedido
+- [requisito] Bloqueio de pedidos - Hora limite para efetuar a primeira sincronização
+- [requisito] Bloqueio de orçamentos - Quantidade de orçamentos pendentes para bloqueio de novo orçamento
+- [requisito] Bloqueio de pedido - Quantidade de pedidos pendentes para bloqueio de novo pedido
+- [requisito] Se BLK_SYNC_ROTEIRO_PENDENTE estiver ativo e existirem clientes do Roteiro de Visitas ainda não atendidos ou justificados, ao tentar sincronizar, o sistema emitirá o alerta: “existem clientes ainda não atendidos ou justificados”
+- [requisito] Bloqueia a alteração de pedidos de bonificação (TV5) quando já salvos
+- [requisito] Não permite salvar o pedido se o parâmetro CON_ACEITAVENDABLOQ (Aceita venda bloqueado da rotina 132) for 'N' e o parâmetro BLOQPEDLIMCRED for 'N' (campo=CON_ACEITAVENDABLOQ, BLOQPEDLIMCRED)
+- [requisito] A opção 'Marcar todas como lidas' em 'Mensagens' é bloqueada se o parâmetro correspondente estiver como 'Sim'
+- [requisito] Bloqueia o início do pedido no dia se houver rotas pendentes do dia anterior
+- [requisito] Define a quantidade máxima de dias de atraso que pode ser visualizado o roteiro (campo=quantidade máxima de dias de atraso)
+- [requisito] Controla os horários que o RCA poderá confeccionar pedidos (campo=horários)
+- [requisito] Controla os horários que o RCA poderá confeccionar pedidos através do Força de Vendas (Android) - IM (Início Manhã), devendo obedecer o formato HHMM (campo=horários, formato HHMM)
+- [requisito] O horário de Início Tarde para confecção de pedidos no Força de Vendas (Android) deve obedecer o formato HHMM (campo=horário de Início Tarde)
+- [requisito] O horário de Término Manhã para confecção de pedidos no Força de Vendas (Android) deve obedecer o formato HHMM (campo=horário de Término Manhã)
+- [requisito] O horário de Término Tarde para confecção de pedidos no Força de Vendas (Android) deve obedecer o formato HHMM (campo=horário de Término Tarde)
+- [requisito] Bloquear a confecção de pedidos quando o cliente principal está bloqueado (campo=status de bloqueio do cliente principal)
+- [requisito] Bloquear o envio de orçamento para o Winthor (campo=envio de orçamento para ERP (Winthor))
+- [requisito] Bloquear pedidos para clientes com títulos vencidos (campo=status de inadimplência do cliente)
+- [requisito] Bloqueia cliente sem limite de credito. (campo=BLOQUEIA_PEDIDO_CLIENTE_SEMLIMITE)
+- [requisito] Bloqueia alteração de praça no cadastro de cliente. (campo=BLOQUEIA_PRACA_PADRAO)
+- [requisito] Praça padrão que será utilizada no cadastro de novos clientes. (campo=COD_PRACA_PADRAO)
+- [requisito] Valida as filiais de venda conforme comportamento do winthor. (campo=COMPORTAMENTO_WHINTOR_FILIAL)
+- [requisito] Define se o RCA vai poder escolher uma das 3 opções de recálculo ou se o recálculo será automático. (campo=CONFIRMAR_ALTERACAO_PLANO_PAGTO)
+- [procedimento] Ao clicar em Comunicar para realizar a sincronização do aparelho, será questionado se deseja realmente sincronizar com as opções de Sim ou Não. (modulo=Sincronização; acao=sincronizar aparelho)
+- [requisito] A confirmação de sincronização é exibida quando o parâmetro CONFIRMAR_PROCESSO_SYNC estiver ativado. (campo=CONFIRMAR_PROCESSO_SYNC)
+- [requisito] Define qual será a filial retira padrão de todos os produtos, independente do cadastro do winthor. (campo=DEFINE_FILIAL_RETIRA_PADRAO)
+- [procedimento] Desabilitar alerta de 'Produto sem estoque suficiente' ao inserir produto no pedido (acao=desabilitar alerta)
+- [requisito] O alerta de 'Produto sem estoque suficiente' é desabilitado ao inserir o produto no pedido
+- [procedimento] Desabilitar cadastro de Cliente (acao=desabilitar cadastro)
+- [requisito] O cadastro de Cliente é desabilitado quando o cliente for pessoa física
+- [procedimento] Não permitir a inclusão de produtos no pedido com desconto (acao=não permitir inclusão)
+- [requisito] A inclusão de produtos no pedido com desconto não é permitida se o C.C. do RCA estiver igual ou menor que zero ou for inferior ao desconto informado
+- [procedimento] Definir limite de dias para adiamento de visita
+- [requisito] Existe um limite de dias para adiamento de visita (campo=dias para adiamento de visita)
+- [procedimento] Considerar quantidade de dias para o RCA visitar o cliente (acao=considerar dias para visita)
+- [requisito] O RCA tem uma quantidade de dias para atender a rota dele (campo=quantidade de dias para atender rota)
+- [procedimento] Validar campo DTULTALTER da MXSCLIENT ao iniciar pedido (acao=validar campo)
+- [requisito] O sistema questiona ou força a edição do cadastro do cliente ao iniciar um pedido (campo=DTULTALTER)
+- [procedimento] Abrir diálogo de edição do cadastro do cliente (acao=abrir diálogo)
+- [requisito] O valor do parâmetro DIAS_ATUALIZACAO_CADASTRO_CLIENTE deve ser maior que 0 para abrir o diálogo de edição do cadastro do cliente (campo=DIAS_ATUALIZACAO_CADASTRO_CLIENTE)
+- [requisito] O parâmetro FORCAR_ATUALIZACAO_CADASTRO_CLIENTE2 é do tipo NUMERICO GERAL/USUARIO MXSPARAMETRO.
+- [requisito] A quantidade de dias permitido para que o RCA possa editar o pedido é definida pelo parâmetro DIAS_EDICAO_PEDIDO.
+- [requisito] A opção de editar o valor de frete no pedido de venda é controlada pelo parâmetro EDITAR_VALOR_FRETE.
+- [requisito] Quando o parâmetro ENVIA_ESTOQUE_TODAS_FILIAIS está habilitado, permite visualizar o estoque dos produtos mesmo nas filiais que o RCA não tem acesso.
+- [requisito] O parâmetro ENVIA_NOTIFICACAO_ESTOQUE_TODAS_FILIAIS controla o envio de previsão de estoque mesmo das filiais que o RCA não tem acesso.
+- [requisito] O parâmetro ENVIA_PEDIDOS_BALCAO permite enviar o histórico de pedidos Balcão.
+- [requisito] O parâmetro ENVIA_PEDIDOS_CALL_CENTER permite enviar o histórico de pedidos do Call Center.
+- [requisito] O parâmetro ENVIA_PEDIDOS_TELEMARKETING permite enviar o histórico de pedidos do Telemarketing.
+- [requisito] O parâmetro ENVIAR_CLIENTES_RCA_9999 controla o envio de clientes vinculados ao RCA 9999.
+- [requisito] Se o parâmetro EXCLUIR_SOMENTE_LIDAS estiver ativo, o sistema impede a exclusão de mensagens não lidas e orienta o usuário a lê-las. (campo=EXCLUIR_SOMENTE_LIDAS)
+- [procedimento] Para visualizar o estoque de outras filiais, acesse a opção '+ Inf.' na tela de inserção do produto. (modulo=Produto; acao=visualizar estoque filial)
+- [requisito] O parâmetro EXIBE_ESTOQUE_FILIAL deve estar ativo para visualizar o estoque de outras filiais. (campo=EXIBE_ESTOQUE_FILIAL)
+- [requisito] O parâmetro EXIBE_PREV_COMISSAO controla a visualização da Previsão de comissão listada na pesquisa de títulos. (campo=EXIBE_PREV_COMISSAO)
+- [requisito] Para não exibir a Previsão de comissão, o parâmetro EXIBE_PREV_COMISSAO deve ser setado com 'N'. (campo=EXIBE_PREV_COMISSAO)
+- [requisito] O parâmetro EXIBE_SUGESTAO_VENDA controla a exibição da Sugestão de Venda. (campo=EXIBE_SUGESTAO_VENDA)
+- [procedimento] Para visualizar a validade dos produtos que estão no WMS, utilize a opção '+.Info' na tela de inserção do item. (modulo=WMS; acao=visualizar validade produto)
+- [requisito] O parâmetro EXIBE_VALIDADE_PRODUTO_WMS habilita a visualização da validade dos produtos do WMS. (campo=EXIBE_VALIDADE_PRODUTO_WMS)
+- [requisito] Se o parâmetro EXIBIR_ALERTA_CREDITO_CLIENTE estiver habilitado como 'S', uma mensagem com o valor de crédito do cliente será exibida ao iniciar o pedido. (campo=EXIBIR_ALERTA_CREDITO_CLIENTE)
+- [requisito] O valor padrão do parâmetro EXIBIR_ALERTA_CREDITO_CLIENTE é 'N'. (campo=EXIBIR_ALERTA_CREDITO_CLIENTE)
+- [requisito] Se o parâmetro EXIBIR_ESTOQUE_BLOQUEADO estiver como 'S', o estoque bloqueado será exibido na listagem e no diálogo de inserir produto. (campo=EXIBIR_ESTOQUE_BLOQUEADO)
+- [requisito] O parâmetro EXIBIR_ESTOQUE_CONTABIL exibe o estoque contábil na tela de inserção de produto. (campo=estoque contábil)
+- [requisito] O parâmetro EXIBIR_QUANTIDADE_SEM_FATOR_EMBALAGEM realiza a divisão da quantidade unitária pela quantidade da caixa. (campo=quantidade)
+- [requisito] O parâmetro EXIBIR_TAXABOLETO controla a apresentação da taxa de boleto. (campo=taxa de boleto)
+- [requisito] O parâmetro EXIBIR_TODA_MOVIMENTACAO_CC define se o saldo previsto CC na aba de totais exibe toda a movimentação. (campo=saldo previsto CC)
+- [requisito] O parâmetro EXIBIR_SUGESTAO_PRECO_COMISSAO apresenta a diferença de comissão para o RCA com base em descontos aplicados. (campo=comissão)
+- [requisito] A filial de nota fiscal define a filial de venda, carregando a filial definida ou especificada para o cliente. (campo=filial)
+- [requisito] O parâmetro FILTRAR_CLIENTES_CONSUMIDOR_FINAL filtra quais usuários podem visualizar clientes consumidor final. (campo=clientes consumidor final)
+- [requisito] O mix do cliente será filtrado por RCA se o parâmetro FILTRAR_DADOS_RCA_MIXVENDIDO estiver setado como 'S'. (campo=FILTRAR_DADOS_RCA_MIXVENDIDO)
+- [requisito] Se FILTRAR_DADOS_TITULOS_RCA for 'S', apenas os títulos do RCA que está logado serão exibidos. (campo=FILTRAR_DADOS_TITULOS_RCA)
+- [requisito] Se FILTRAR_DADOS_TITULOS_RCA for 'N', os títulos de todos os RCAs serão exibidos. (campo=FILTRAR_DADOS_TITULOS_RCA)
+- [requisito] Se FILTRAR_FILIAL_MIX for 'S', apenas produtos da filial que está sendo digitado o pedido aparecerão no mix. (campo=FILTRAR_FILIAL_MIX)
+- [requisito] Se FILTRAR_FILIAL_MIX for 'N', produtos de qualquer filial serão apresentados no mix, independentemente da filial de venda. (campo=FILTRAR_FILIAL_MIX)
+- [requisito] O valor padrão de FILTRAR_FILIAL_MIX é 'S' caso o parâmetro não exista cadastrado. (campo=FILTRAR_FILIAL_MIX)
+- [requisito] O parâmetro FORCAR_ATUALIZACAO_CADASTRO_CLIENTE está vinculado ao parâmetro DIAS_ATUALIZACAO_CADASTRO_CLIENTE. (campo=FORCAR_ATUALIZACAO_CADASTRO_CLIENTE)
+- [procedimento] Ao iniciar um pedido, o sistema valida o campo DTULTALTER da MXSCLIENT para verificar a data da última alteração do cadastro do cliente. (modulo=Pedido; acao=validação de cadastro de cliente)
+- [requisito] Se o valor de DIAS_ATUALIZACAO_CADASTRO_CLIENTE for maior que 0, o sistema questiona ou força a edição do cadastro do cliente. (campo=DIAS_ATUALIZACAO_CADASTRO_CLIENTE)
+- [requisito] Se o valor de DIAS_ATUALIZACAO_CADASTRO_CLIENTE for 0, o diálogo para edição do cadastro do cliente não é aberto. (campo=DIAS_ATUALIZACAO_CADASTRO_CLIENTE)
+- [requisito] O mix do cliente é habilitado pelo parâmetro GERAR_DADOS_MIX_CLIENTES. (campo=GERAR_DADOS_MIX_CLIENTES)
+- [procedimento] Configurar o parâmetro GERAR_DADOS_MIX_CLIENTES_DIAS (modulo=MXSPARAMETRO; acao=configurar)
+- [requisito] O parâmetro GERAR_DADOS_MIX_CLIENTES_DIAS define a quantidade de dias para gerar o mix de clientes. (campo=GERAR_DADOS_MIX_CLIENTES_DIAS)
+- [procedimento] Habilitar a geração e exibição de clientes positivados (modulo=MXSPARAMETRO; acao=habilitar)
+- [requisito] O parâmetro GERAR_DADOS_POS_CLIENTES habilita a geração e exibição de clientes positivados no sistema. (campo=GERAR_DADOS_POS_CLIENTES)
+- [procedimento] Habilitar a geração e exibição de produtos positivados (modulo=MXSPARAMETRO; acao=habilitar)
+- [requisito] O parâmetro GERAR_DADOS_POS_PRODUTOS habilita a geração e exibição de produtos positivados no sistema. (campo=GERAR_DADOS_POS_PRODUTOS)
+- [procedimento] Ativar a validação da cerca eletrônica (modulo=MXSPARAMETRO; acao=ativar)
+- [requisito] O parâmetro GPS_EDGE_BLOCK controla a validação da cerca eletrônica. (campo=GPS_EDGE_BLOCK)
+- [procedimento] Configurar a tolerância da cerca eletrônica (modulo=MXSPARAMETRO; acao=configurar)
+- [requisito] A tolerância da cerca eletrônica (GPS_EDGE_METERS_SIZE) pode ser definida com a metragem desejada. (campo=GPS_EDGE_METERS_SIZE)
+- [procedimento] Alterar o horário inicial do acompanhamento da cerca eletrônica (modulo=MXSPARAMETRO; acao=alterar)
+- [requisito] O horário inicial do acompanhamento da cerca eletrônica (GPS_TRACKING_STARTTIME) é configurável. (campo=GPS_TRACKING_STARTTIME)
+- [procedimento] Alterar o horário final do acompanhamento da cerca eletrônica (modulo=MXSPARAMETRO; acao=alterar)
+- [requisito] O horário final do acompanhamento da cerca eletrônica (GPS_TRACKING_STOPTIME) é configurável. (campo=GPS_TRACKING_STOPTIME)
+- [procedimento] Configurar a regra de atualização de coordenadas (modulo=MXSPARAMETRO; acao=configurar)
+- [requisito] As coordenadas são atualizadas somente se estiverem vazias, conforme o parâmetro GPS_UPDATE_COORDENADAS_SOMENTE_SE_NAO_PREENCHIDO. (campo=GPS_UPDATE_COORDENADAS_SOMENTE_SE_NAO_PREENCHIDO)
+- [procedimento] Habilitar o alerta pop-up de observações do cliente (modulo=Força de Vendas; acao=habilitar alerta)
+- [requisito] O alerta pop-up (HABILITA_ALERTA_CLIENTE_OBS) exibe observações do campo 'Pos. Financeira' do Força de Vendas. (campo=Pos. Financeira)
+- [procedimento] Mapear observações financeiras do cliente (modulo=Rotina 1203; acao=mapear dados)
+- [requisito] As observações do campo 'Pos. Financeira' no Força de Vendas correspondem ao campo 'Observação' da Rotina 1203. (campo=Observação)
+- [procedimento] Configurar o parâmetro HABILITA_ALERTA_CLIENTE_OBS (modulo=MXSPARAMETRO; acao=configurar parâmetro)
+- [requisito] O parâmetro HABILITA_ALERTA_CLIENTE_OBS é do tipo LÓGICO GERAL/USUÁRIO. (campo=tipo de parâmetro)
+- [procedimento] Configurar o parâmetro HABILITA_CHKBOX_AGRUPAMENTO (modulo=MXSPARAMETRO; acao=configurar parâmetro)
+- [requisito] Se HABILITA_CHKBOX_AGRUPAMENTO for 'S', a opção 'Permitir Agrupamento' estará selecionada ao iniciar um pedido de vendas. (campo=Permitir Agrupamento)
+- [requisito] Se HABILITA_CHKBOX_AGRUPAMENTO for 'N', a opção 'Permitir Agrupamento' não estará selecionada ao iniciar um pedido de vendas. (campo=Permitir Agrupamento)
+- [requisito] O RCA pode selecionar a opção 'Permitir Agrupamento' manualmente, independentemente do parâmetro HABILITA_CHKBOX_AGRUPAMENTO. (campo=Permitir Agrupamento)
+- [procedimento] Configurar o parâmetro HABILITA_CLIENTES_BLOQUEIO_DEFINITIVO (modulo=MXSPARAMETRO; acao=configurar parâmetro)
+- [requisito] O parâmetro HABILITA_CLIENTES_BLOQUEIO_DEFINITIVO controla a listagem de clientes com bloqueio definitivo. (campo=clientes com bloqueio definitivo)
+- [procedimento] Configurar o parâmetro HABILITA_ENVIAR_TODAS_AS_PRACAS_PARA_RCA (modulo=MXSPARAMETRO; acao=configurar parâmetro)
+- [requisito] O parâmetro HABILITA_ENVIAR_TODAS_AS_PRACAS_PARA_RCA habilita o envio de todas as praças para o RCA. (campo=praças)
+- [procedimento] Configurar o parâmetro HABILITA_VENDA_ASSISTIDA (modulo=MXSPARAMETRO; acao=configurar parâmetro)
+- [requisito] O parâmetro HABILITA_VENDA_ASSISTIDA habilita a opção de venda assistida nas informações do pedido. (campo=venda assistida)
+- [procedimento] Configurar o parâmetro HABILITAR_ARREDONDAMENTO_MULTIPLO (modulo=MXSPARAMETRO; acao=configurar parâmetro)
+- [requisito] O parâmetro HABILITAR_ARREDONDAMENTO_MULTIPLO habilita ou desabilita a opção de arredondamento para múltiplo. (campo=arredondamento para múltiplo)
+- [procedimento] Gerenciamento de conexão de rede durante a sincronização (modulo=Sincronização; acao=gerenciar conexão)
+- [requisito] O sistema habilita uma rede (Wi-Fi ou 3G) se nenhuma estiver ativa ao iniciar a sincronização e a encerra ao término.
+- [procedimento] Exibição de informações na listagem de produtos (modulo=Produtos; acao=exibir listagem)
+- [requisito] O código do fabricante é exibido na listagem dos produtos. (campo=código do fabricante)

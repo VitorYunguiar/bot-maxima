@@ -1,0 +1,25 @@
+# Ambiente
+.env
+venv/
+.venv/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Dados locais
+documentos/
+ingest_failures.json
+
+# IDE
+.vscode/
+.idea/
+
+# Claude
+.claude/
+
+# Sistema
+nul
+Thumbs.db
+.DS_Store

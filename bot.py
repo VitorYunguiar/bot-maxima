@@ -1,0 +1,496 @@
+"""
+bot.py — Bot Discord com RAG, replicando o Claude Projects.
+"""
+
+import asyncio
+import base64
+import logging
+import re
+import time
+
+import discord
+from discord.ext import commands
+
+import config
+import rag
+from bot_common import ConversationManager, split_message
+from ingest import ingest_directory
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logger = logging.getLogger(__name__)
+
+# ── Bot setup ─────────────────────────────────────────────
+
+intents = discord.Intents.default()
+intents.message_content = True
+
+bot = commands.Bot(command_prefix=config.COMMAND_PREFIX, intents=intents)
+
+# Historico e cooldown centralizados
+_conv = ConversationManager()
+
+
+_TABLE_PATTERN = re.compile(
+    r"((?:^[ \t]*\|.+\|[ \t]*$\n?){2,})",
+    re.MULTILINE,
+)
+
+
+def _markdown_table_to_codeblock(text: str) -> str:
+    """Converte tabelas Markdown (| col | col |) em blocos de codigo monospace alinhados.
+
+    O Discord nao renderiza tabelas Markdown, entao esta funcao detecta e converte
+    automaticamente para um formato legivel com colunas alinhadas.
+    """
+    # Fast path: sem pipe, sem tabela possivel
+    if "|" not in text:
+        return text
+
+    def _convert_table(match: re.Match) -> str:
+        table_text = match.group(1).strip()
+        lines = table_text.split("\n")
+
+        # Parsear celulas de cada linha, ignorando linhas separadoras (|---|---|)
+        rows: list[list[str]] = []
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            # Detectar e pular linhas separadoras como |---|---| ou | :---: | --- |
+            cells = [c.strip() for c in line.strip("|").split("|")]
+            if all(re.match(r"^:?-+:?$", c) for c in cells if c):
+                continue
+            rows.append(cells)
+
+        if not rows:
+            return table_text
+
+        # Calcular largura maxima de cada coluna
+        num_cols = max(len(row) for row in rows)
+        col_widths = [0] * num_cols
+        for row in rows:
+            for i, cell in enumerate(row):
+                if i < num_cols:
+                    col_widths[i] = max(col_widths[i], len(cell))
+
+        # Formatar linhas com colunas alinhadas
+        formatted_lines = []
+        for row_idx, row in enumerate(rows):
+            parts = []
+            for i in range(num_cols):
+                cell = row[i] if i < len(row) else ""
+                parts.append(cell.ljust(col_widths[i]))
+            formatted_lines.append("  ".join(parts))
+            # Adicionar separador abaixo do header (primeira linha)
+            if row_idx == 0:
+                sep_parts = ["-" * w for w in col_widths]
+                formatted_lines.append("  ".join(sep_parts))
+
+        return "```\n" + "\n".join(formatted_lines) + "\n```"
+
+    return _TABLE_PATTERN.sub(_convert_table, text)
+
+
+async def send_split_response(target, response: str, is_reply: bool = True):
+    """Envia resposta dividida em partes se necessario."""
+    parts = split_message(response, limit=config.DISCORD_MSG_LIMIT)
+    for i, part in enumerate(parts):
+        try:
+            if i == 0 and is_reply:
+                await target.reply(part)
+            else:
+                channel = target.channel if hasattr(target, "channel") else target
+                await channel.send(part)
+        except discord.HTTPException as e:
+            logger.error("Erro ao enviar mensagem: %s", e)
+
+
+# ── Eventos ───────────────────────────────────────────────
+
+@bot.event
+async def on_ready():
+    logger.info("Bot conectado como %s (ID: %s)", bot.user, bot.user.id)
+    logger.info("Prefixo: %s", config.COMMAND_PREFIX)
+    await bot.change_presence(
+        activity=discord.Activity(
+            type=discord.ActivityType.listening,
+            name=f"{config.COMMAND_PREFIX}perguntar",
+        )
+    )
+
+
+# ── Boas-vindas ──────────────────────────────────────────
+
+@bot.event
+async def on_guild_join(guild: discord.Guild):
+    """Mensagem de boas-vindas quando o bot e adicionado a um servidor."""
+    # Tenta enviar no primeiro canal de texto disponivel
+    channel = guild.system_channel or next(
+        (ch for ch in guild.text_channels if ch.permissions_for(guild.me).send_messages),
+        None,
+    )
+    if channel:
+        embed = discord.Embed(
+            title="Ola! Sou o Sabidao :wave:",
+            description=(
+                "Assistente tecnico da Maxima Sistemas. "
+                "Consulto a base de documentos para responder perguntas sobre "
+                "maxPedido, ERPs e ferramentas de gestao.\n\n"
+                f"Use `{config.COMMAND_PREFIX}perguntar <sua pergunta>` ou me mencione diretamente.\n"
+                f"Digite `{config.COMMAND_PREFIX}ajuda` para ver todos os comandos."
+            ),
+            color=discord.Color.gold(),
+        )
+        embed.set_footer(text="Dica: Anexe screenshots para analise de erros!")
+        try:
+            await channel.send(embed=embed)
+        except discord.HTTPException:
+            pass
+
+
+# ── Imagens ──────────────────────────────────────────────
+
+_EXT_TO_MEDIA_TYPE = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+}
+
+
+def _get_image_media_type(attachment: discord.Attachment) -> str | None:
+    """Detecta media type pela extensao do arquivo (mais confiavel que content_type do Discord)."""
+    filename = (attachment.filename or "").lower()
+    for ext, media_type in _EXT_TO_MEDIA_TYPE.items():
+        if filename.endswith(ext):
+            return media_type
+    # Fallback: tentar content_type do Discord (pode vir com charset)
+    ct = attachment.content_type or ""
+    base_ct = ct.split(";")[0].strip().lower()
+    if base_ct.startswith("image/"):
+        return base_ct
+    return None
+
+
+async def extract_images(message: discord.Message) -> list[dict]:
+    """Extrai imagens dos attachments de uma mensagem Discord."""
+    logger.info("extract_images: %d attachments na mensagem", len(message.attachments))
+    images = []
+    for att in message.attachments:
+        logger.info("  -> attachment: %s | content_type=%s | size=%d", att.filename, att.content_type, att.size)
+        media_type = _get_image_media_type(att)
+        if not media_type:
+            logger.debug("Attachment %s ignorado (nao e imagem: %s)", att.filename, att.content_type)
+            continue
+        if att.size > config.MAX_IMAGE_SIZE_BYTES:
+            logger.warning("Imagem %s ignorada (%.1f MB > 20 MB)", att.filename, att.size / 1024 / 1024)
+            continue
+        if len(images) >= config.MAX_IMAGES_PER_MESSAGE:
+            break
+        try:
+            img_bytes = await att.read()
+            images.append({
+                "data": base64.standard_b64encode(img_bytes).decode("utf-8"),
+                "media_type": media_type,
+            })
+            logger.info("Imagem capturada: %s (%s, %.1f KB)", att.filename, media_type, att.size / 1024)
+        except Exception as e:
+            logger.error("Erro ao ler imagem %s: %s", att.filename, e)
+    return images
+
+
+# ── Handler de perguntas (compartilhado) ─────────────────
+
+async def handle_question(target, user_id: int, channel_id: int, question: str, images: list[dict] = None):
+    """Logica compartilhada entre comando e mencao."""
+    # Validacao de tamanho
+    if len(question) > config.MAX_QUESTION_LENGTH:
+        await target.reply(
+            f"Pergunta muito longa ({len(question)} caracteres). "
+            f"O limite e {config.MAX_QUESTION_LENGTH} caracteres. Tente resumir."
+        )
+        return
+
+    # Cooldown
+    remaining = _conv.check_cooldown(user_id)
+    if remaining is not None:
+        await target.reply(f"Aguarde {remaining:.0f}s antes de perguntar novamente.")
+        return
+
+    logger.info("QUERY user=%s channel=%s len=%d images=%d", user_id, channel_id, len(question), len(images or []))
+
+    channel = target.channel if hasattr(target, "channel") else target
+    async with channel.typing():
+        history = _conv.get_history(channel_id)
+
+        t_start = time.monotonic()
+        try:
+            answer, chunks = await asyncio.wait_for(
+                asyncio.to_thread(rag.ask, question, list(history), images),
+                timeout=config.ASK_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            await target.reply(
+                "A consulta excedeu o tempo limite. Tente reformular com uma pergunta mais curta ou especifica."
+            )
+            return
+        except Exception as e:
+            logger.error("Erro no RAG: %s", e)
+            await target.reply(f"Erro ao processar a pergunta: {str(e)[:200]}")
+            return
+        elapsed = time.monotonic() - t_start
+
+        # Atualizar historico (sem imagens para nao estourar memoria)
+        hist = _conv.get_history(channel_id)
+        hist.append({"role": "user", "content": question})
+        hist.append({"role": "assistant", "content": answer})
+        _conv.trim_history(channel_id)
+
+        # Registrar knowledge gap se similaridade baixa
+        max_sim = (
+            max((rag._safe_similarity(c.get("similarity", 0)) for c in chunks), default=0.0)
+            if chunks
+            else 0.0
+        )
+        if max_sim < config.CONFIDENCE_THRESHOLD:
+            asyncio.get_event_loop().run_in_executor(
+                None, rag.log_knowledge_gap, question, max_sim, "discord"
+            )
+
+        # Formatar e enviar (converter tabelas Markdown para code blocks)
+        response = _markdown_table_to_codeblock(answer)
+        await send_split_response(target, response)
+
+
+# ── Comando: perguntar ────────────────────────────────────
+
+@bot.command(name="perguntar", aliases=["ask", "p"])
+async def cmd_perguntar(ctx: commands.Context, *, question: str):
+    """Faz uma pergunta consultando a base de documentos. Anexe imagens para analise."""
+    images = await extract_images(ctx.message)
+    await handle_question(ctx, ctx.author.id, ctx.channel.id, question, images)
+
+
+# ── Comando: status ───────────────────────────────────────
+
+@bot.command(name="status")
+async def cmd_status(ctx: commands.Context):
+    """Mostra estatisticas da base de conhecimento."""
+    async with ctx.typing():
+        try:
+            stats = rag.get_stats()
+            embed = discord.Embed(
+                title="Status da Base de Conhecimento",
+                color=discord.Color.blue(),
+            )
+            embed.add_field(
+                name="Documentos", value=str(stats.get("total_documents", 0)), inline=True
+            )
+            embed.add_field(
+                name="Chunks indexados", value=str(stats.get("total_chunks", 0)), inline=True
+            )
+            embed.add_field(
+                name="Modelo", value=config.GEMINI_MODEL, inline=False
+            )
+            embed.add_field(
+                name="Embeddings", value=config.EMBEDDING_MODEL, inline=False
+            )
+            await ctx.reply(embed=embed)
+        except Exception as e:
+            await ctx.reply(f"Erro ao buscar status: {e}")
+
+
+# ── Comando: fontes ───────────────────────────────────────
+
+@bot.command(name="fontes", aliases=["docs", "documentos"])
+async def cmd_fontes(ctx: commands.Context):
+    """Lista os documentos disponiveis na base."""
+    async with ctx.typing():
+        try:
+            docs = rag.list_documents()
+            if not docs:
+                await ctx.reply("Nenhum documento indexado ainda. Use `ingest.py` para adicionar documentos.")
+                return
+
+            embed = discord.Embed(
+                title="Documentos na Base",
+                color=discord.Color.green(),
+            )
+            for doc in docs[:25]:  # Discord limita a 25 fields
+                name = doc.get("filename", "?")
+                chunks = doc.get("chunk_count", 0)
+                doc_type = doc.get("doc_type", "?")
+                embed.add_field(
+                    name=name,
+                    value=f"Tipo: `{doc_type}` | Chunks: `{chunks}`",
+                    inline=False,
+                )
+
+            await ctx.reply(embed=embed)
+        except Exception as e:
+            await ctx.reply(f"Erro ao listar documentos: {e}")
+
+
+# ── Comando: ingerir (admin) ──────────────────────────────
+
+@bot.command(name="ingerir", aliases=["reindex"])
+@commands.has_permissions(administrator=True)
+async def cmd_ingerir(ctx: commands.Context):
+    """Re-processa todos os documentos da pasta. (Admin apenas)"""
+    await ctx.reply("Iniciando re-ingestao de documentos... isso pode demorar.")
+
+    async with ctx.typing():
+        try:
+            results = await asyncio.to_thread(ingest_directory)
+            total = sum(r.get("chunks_count", 0) for r in results)
+            success = sum(1 for r in results if r.get("chunks_count", 0) > 0)
+            await ctx.reply(
+                f"Ingestao concluida!\n"
+                f"{success}/{len(results)} documentos processados\n"
+                f"{total} chunks indexados no total"
+            )
+        except Exception as e:
+            await ctx.reply(f"Erro na ingestao: {e}")
+
+
+# ── Comando: limpar (historico) ───────────────────────────
+
+@bot.command(name="limpar", aliases=["clear"])
+async def cmd_limpar(ctx: commands.Context):
+    """Limpa o historico de conversa do canal."""
+    _conv.clear_history(ctx.channel.id)
+    await ctx.reply("Historico de conversa limpo!")
+
+
+# ── Comando: lacunas (admin) ─────────────────────────────
+
+@bot.command(name="lacunas", aliases=["gaps"])
+@commands.has_permissions(administrator=True)
+async def cmd_lacunas(ctx: commands.Context):
+    """Mostra as perguntas mais frequentes sem resposta na base. (Admin apenas)"""
+    async with ctx.typing():
+        try:
+            gaps = await asyncio.to_thread(rag.get_top_knowledge_gaps, 10)
+            if not gaps:
+                await ctx.reply("Nenhuma lacuna registrada. A base esta cobrindo bem as perguntas!")
+                return
+
+            embed = discord.Embed(
+                title="Lacunas na Base de Conhecimento",
+                description="Perguntas frequentes sem resposta adequada:",
+                color=discord.Color.orange(),
+            )
+            for i, gap in enumerate(gaps[:10], 1):
+                query = gap.get("query", "?")[:100]
+                count = gap.get("occurrences", 0)
+                sim = gap.get("max_similarity", 0)
+                embed.add_field(
+                    name=f"{i}. ({count}x) sim={sim:.0%}",
+                    value=query,
+                    inline=False,
+                )
+            await ctx.reply(embed=embed)
+        except Exception as e:
+            await ctx.reply(f"Erro ao buscar lacunas: {e}")
+
+
+# ── Comando: ajuda ───────────────────────────────────────
+
+@bot.command(name="ajuda", aliases=["h"])
+async def cmd_ajuda(ctx: commands.Context):
+    """Mostra os comandos disponiveis e como usar o bot."""
+    embed = discord.Embed(
+        title="Sabidao — Assistente Tecnico Maxima",
+        description=(
+            "Consulto a base de documentos da Maxima para responder perguntas tecnicas "
+            "sobre maxPedido, ERPs e ferramentas de gestao."
+        ),
+        color=discord.Color.gold(),
+    )
+    embed.add_field(
+        name=f"`{config.COMMAND_PREFIX}perguntar <pergunta>`",
+        value="Faz uma pergunta consultando a base. Aceita imagens em anexo.\nAtalhos: `!ask`, `!p`",
+        inline=False,
+    )
+    embed.add_field(
+        name=f"`@{config.BOT_NAME} <pergunta>`",
+        value="Mencione o bot diretamente para perguntar sem comando.",
+        inline=False,
+    )
+    embed.add_field(
+        name=f"`{config.COMMAND_PREFIX}status`",
+        value="Mostra estatisticas da base (documentos, chunks, modelo).",
+        inline=False,
+    )
+    embed.add_field(
+        name=f"`{config.COMMAND_PREFIX}fontes`",
+        value="Lista os documentos indexados na base.",
+        inline=False,
+    )
+    embed.add_field(
+        name=f"`{config.COMMAND_PREFIX}limpar`",
+        value="Limpa o historico de conversa deste canal.",
+        inline=False,
+    )
+    embed.add_field(
+        name=f"`{config.COMMAND_PREFIX}ping`",
+        value="Verifica se o bot esta online.",
+        inline=False,
+    )
+    embed.set_footer(text="Dica: Anexe screenshots para analise de erros e telas do sistema.")
+    await ctx.reply(embed=embed)
+
+
+# ── Comando: ping ────────────────────────────────────────
+
+@bot.command(name="ping")
+async def cmd_ping(ctx: commands.Context):
+    """Verifica se o bot esta online e a latencia."""
+    await ctx.reply(f"Pong! Latencia: {bot.latency * 1000:.0f}ms")
+
+
+# ── Responder mencoes ─────────────────────────────────────
+
+@bot.event
+async def on_message(message: discord.Message):
+    if message.author == bot.user:
+        return
+
+    await bot.process_commands(message)
+
+    if bot.user in message.mentions and not message.content.startswith(config.COMMAND_PREFIX):
+        question = message.content.replace(f"<@{bot.user.id}>", "").replace(f"<@!{bot.user.id}>", "").strip()
+        images = await extract_images(message)
+
+        if not question and not images:
+            await message.reply(
+                f"Me faca uma pergunta ou use `{config.COMMAND_PREFIX}perguntar <sua pergunta>`"
+            )
+            return
+
+        if not question and images:
+            question = "Analise esta imagem e descreva o que voce ve. Se for um erro ou tela do sistema, explique o que esta acontecendo."
+
+        await handle_question(message, message.author.id, message.channel.id, question, images)
+
+
+# ── Error handling ────────────────────────────────────────
+
+@bot.event
+async def on_command_error(ctx: commands.Context, error):
+    if isinstance(error, commands.MissingRequiredArgument):
+        await ctx.reply(f"Argumento faltando. Uso: `{config.COMMAND_PREFIX}perguntar <sua pergunta>`")
+    elif isinstance(error, commands.MissingPermissions):
+        await ctx.reply("Voce nao tem permissao para usar este comando.")
+    else:
+        logger.error("Erro no comando: %s", error)
+        await ctx.reply(f"Ocorreu um erro: {str(error)[:200]}")
+
+
+# ── Start ─────────────────────────────────────────────────
+
+if __name__ == "__main__":
+    config.validate()
+    logger.info("Iniciando bot...")
+    bot.run(config.DISCORD_TOKEN)
