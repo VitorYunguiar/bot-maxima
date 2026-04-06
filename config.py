@@ -3,6 +3,8 @@ config.py - Configuracoes centralizadas carregadas do .env
 """
 
 import os
+import re
+from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -47,6 +49,18 @@ BOT_NAME = os.getenv("BOT_NAME", "Assistente")
 # Google Gemini (LLM + embeddings)
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-pro")
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "gemini").strip().lower()
+_embedding_provider_raw = os.getenv("EMBEDDING_PROVIDER")
+if _embedding_provider_raw is None or not _embedding_provider_raw.strip():
+    EMBEDDING_PROVIDER = LLM_PROVIDER
+else:
+    EMBEDDING_PROVIDER = _embedding_provider_raw.strip().lower()
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.4")
+OPENAI_REFORMULATION_MODEL = os.getenv("OPENAI_REFORMULATION_MODEL", "gpt-5.4-mini")
+OPENAI_CONTEXTUAL_MODEL = os.getenv("OPENAI_CONTEXTUAL_MODEL", "gpt-5.4-mini")
+OPENAI_EMBEDDING_MODEL = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-large")
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "gemini-embedding-001")
 EMBEDDING_DIMENSIONS = _env_int("EMBEDDING_DIMENSIONS", 1536)
 EMBEDDING_BATCH_SIZE = _env_int("EMBEDDING_BATCH_SIZE", 10)
@@ -71,7 +85,7 @@ RAG_FILTER_BY_MODULE = _env_bool("RAG_FILTER_BY_MODULE", True)
 RAG_ENABLE_BUSINESS_RULES = _env_bool("RAG_ENABLE_BUSINESS_RULES", True)
 BUSINESS_RULES_FILE = os.getenv(
     "BUSINESS_RULES_FILE",
-    "./documentos/00-REGRAS-NEGOCIO-MAXPEDIDO.md",
+    "./bootstrap/00-DOCUMENTO-PRINCIPAL.md",
 )
 BUSINESS_RULES_MAX_CHARS = _env_int("BUSINESS_RULES_MAX_CHARS", 8000)
 
@@ -85,12 +99,23 @@ SIMILARITY_FLOOR_FACTOR = _env_float("SIMILARITY_FLOOR_FACTOR", 0.7)
 RAG_ENABLE_QUERY_REFORMULATION = _env_bool("RAG_ENABLE_QUERY_REFORMULATION", True)
 REFORMULATION_MODEL = os.getenv("REFORMULATION_MODEL", "gemini-2.5-flash")
 RAG_ENABLE_RERANKING = _env_bool("RAG_ENABLE_RERANKING", True)
+RERANKER_SKIP_THRESHOLD = _env_float("RERANKER_SKIP_THRESHOLD", 0.78)
+RAG_STRICT_ABSTAIN = _env_bool("RAG_STRICT_ABSTAIN", True)
+RAG_MIN_STRONG_SIMILARITY = _env_float("RAG_MIN_STRONG_SIMILARITY", 0.62)
+RAG_MIN_RETRIEVED_CHUNKS = _env_int("RAG_MIN_RETRIEVED_CHUNKS", 2)
+RAG_OPERATIONAL_SIMILARITY_MARGIN = _env_float("RAG_OPERATIONAL_SIMILARITY_MARGIN", 0.05)
+RAG_ENABLE_GROUNDING_VALIDATION = _env_bool("RAG_ENABLE_GROUNDING_VALIDATION", True)
+RAG_REQUIRE_SOURCES_SECTION = _env_bool("RAG_REQUIRE_SOURCES_SECTION", True)
+RAG_MAX_REGEN_ATTEMPTS = _env_int("RAG_MAX_REGEN_ATTEMPTS", 1)
+RAG_FEEDBACK_TOP_K = _env_int("RAG_FEEDBACK_TOP_K", 4)
+RAG_FEEDBACK_MIN_SIMILARITY = _env_float("RAG_FEEDBACK_MIN_SIMILARITY", 0.58)
 
 # Contextual Retrieval (enriquecimento de chunks — tecnica Anthropic)
 CONTEXTUAL_RETRIEVAL_ENABLED = _env_bool("CONTEXTUAL_RETRIEVAL_ENABLED", True)
 CONTEXTUAL_RETRIEVAL_MODEL = os.getenv("CONTEXTUAL_RETRIEVAL_MODEL", "gemini-2.5-flash")
 CONTEXTUAL_RETRIEVAL_MAX_DOC_CHARS = _env_int("CONTEXTUAL_RETRIEVAL_MAX_DOC_CHARS", 500000)
 CONTEXTUAL_RETRIEVAL_MAX_TOKENS = _env_int("CONTEXTUAL_RETRIEVAL_MAX_TOKENS", 150)
+CONTEXTUAL_RETRIEVAL_BATCH_SIZE = _env_int("CONTEXTUAL_RETRIEVAL_BATCH_SIZE", 50)
 
 # Ingestao web (URLs)
 WEB_FETCH_TIMEOUT_SECONDS = _env_float("WEB_FETCH_TIMEOUT_SECONDS", 20.0)
@@ -98,6 +123,16 @@ WEB_USER_AGENT = os.getenv("WEB_USER_AGENT", "BotMaximaRAG/1.0")
 WEB_MAX_TEXT_CHARS = _env_int("WEB_MAX_TEXT_CHARS", 400000)
 URLS_FILE_DEFAULT = os.getenv("URLS_FILE_DEFAULT", "./documentos/urls.txt")
 URL_REVIEW_OUTPUT_DIR = os.getenv("URL_REVIEW_OUTPUT_DIR", "./documentos/_pendentes_url")
+
+# Frase padrao para respostas sem informacao na base de conhecimento
+NO_ANSWER_PHRASE = (
+    "Nao encontrei essa informacao na base de conhecimento. "
+    "Recomendo abrir um chamado ou consultar a equipe N2."
+)
+ABSTAIN_CLARIFYING_QUESTION = os.getenv(
+    "ABSTAIN_CLARIFYING_QUESTION",
+    "Pode detalhar o modulo, a tela/parametro e a mensagem de erro exata para eu buscar com mais precisao?",
+)
 
 # System prompt
 SYSTEM_PROMPT = os.getenv(
@@ -125,11 +160,10 @@ SYSTEM_PROMPT = os.getenv(
         "- NUNCA crie procedimentos, passos ou instrucoes que nao estejam documentados.\n"
         "- NUNCA invente consultas SQL, tabelas ou colunas que nao estejam nos documentos.\n"
         "- Se a informacao nao estiver nos documentos, responda EXATAMENTE: "
-        "\"Nao encontrei essa informacao na base de conhecimento. Recomendo abrir um chamado ou consultar a equipe N2.\"\n"
+        f"\"{NO_ANSWER_PHRASE}\"\n"
         "- Se a documentacao cobrir apenas PARTE da pergunta, responda so a parte documentada e diga claramente o que nao foi encontrado.\n"
         "- Na duvida, NAO responda. E melhor dizer que nao sabe do que dar uma informacao errada.\n\n"
         "## Regras de resposta\n"
-        "- Responda SOMENTE com base nos documentos fornecidos como contexto.\n"
         "- Sempre cite a fonte (nome do arquivo) quando usar informacao dos documentos.\n"
         "- Quando o usuario enviar IMAGENS (screenshots, prints de tela, fotos de erro), "
         "ANALISE a imagem detalhadamente. Descreva o que voce ve, identifique erros, "
@@ -155,11 +189,37 @@ SYSTEM_PROMPT = os.getenv(
     ),
 )
 
+# System prompt variante para Teams (renderiza tabelas Markdown, ao contrario do Discord)
+SYSTEM_PROMPT_TEAMS = SYSTEM_PROMPT.replace(
+    (
+        "- NUNCA use tabelas Markdown (com | e -). O Discord NAO renderiza tabelas.\n"
+        "- Para dados tabulares, use LISTAS com bullet points. Cada item em uma linha separada. Exemplo:\n"
+        "  **Campo X**: valor — descricao\n"
+        "  **Campo Y**: valor — descricao\n"
+        "- Se houver muitos campos, agrupe por categoria usando subtitulos em negrito.\n"
+    ),
+    (
+        "- Use tabelas Markdown quando apropriado para apresentar dados tabelares. "
+        "O Teams renderiza tabelas corretamente.\n"
+        "- Se houver muitos campos, agrupe por categoria usando subtitulos em negrito.\n"
+    ),
+)
+
 # Microsoft Teams (sem defaults — credenciais devem estar no .env)
 TEAMS_APP_ID = os.getenv("TEAMS_APP_ID")
 TEAMS_APP_PASSWORD = os.getenv("TEAMS_APP_PASSWORD")
 TEAMS_TENANT_ID = os.getenv("TEAMS_TENANT_ID")
 TEAMS_PORT = _env_int("TEAMS_PORT", 3978)
+TEAMS_ADMIN_IDS = [value.strip() for value in os.getenv("TEAMS_ADMIN_IDS", "").split(",") if value.strip()]
+TEAMS_MANIFEST_SHORT_NAME = os.getenv("TEAMS_MANIFEST_SHORT_NAME")
+TEAMS_MANIFEST_FULL_NAME = os.getenv("TEAMS_MANIFEST_FULL_NAME")
+TEAMS_MANIFEST_SHORT_DESCRIPTION = os.getenv("TEAMS_MANIFEST_SHORT_DESCRIPTION")
+TEAMS_MANIFEST_FULL_DESCRIPTION = os.getenv("TEAMS_MANIFEST_FULL_DESCRIPTION")
+TEAMS_MANIFEST_DEVELOPER_NAME = os.getenv("TEAMS_MANIFEST_DEVELOPER_NAME")
+TEAMS_MANIFEST_DEVELOPER_WEBSITE_URL = os.getenv("TEAMS_MANIFEST_DEVELOPER_WEBSITE_URL")
+TEAMS_MANIFEST_DEVELOPER_PRIVACY_URL = os.getenv("TEAMS_MANIFEST_DEVELOPER_PRIVACY_URL")
+TEAMS_MANIFEST_DEVELOPER_TERMS_URL = os.getenv("TEAMS_MANIFEST_DEVELOPER_TERMS_URL")
+TEAMS_MANIFEST_ACCENT_COLOR = os.getenv("TEAMS_MANIFEST_ACCENT_COLOR")
 
 # Bot - limites
 COOLDOWN_SECONDS = _env_float("COOLDOWN_SECONDS", 10.0)
@@ -190,21 +250,40 @@ if EMBEDDING_DIMENSIONS not in _ALLOWED_EMBEDDING_DIMENSIONS:
 
 
 # Validacao
-_REQUIRED_SHARED = {
-    "GEMINI_API_KEY": GEMINI_API_KEY,
-    "SUPABASE_URL": SUPABASE_URL,
-    "SUPABASE_SERVICE_KEY": SUPABASE_SERVICE_KEY,
-}
+def _required_shared_base():
+    return {
+        "SUPABASE_URL": SUPABASE_URL,
+        "SUPABASE_SERVICE_KEY": SUPABASE_SERVICE_KEY,
+    }
 
-_REQUIRED_DISCORD = {
-    "DISCORD_TOKEN": DISCORD_TOKEN,
-}
 
-_REQUIRED_TEAMS = {
-    "TEAMS_APP_ID": TEAMS_APP_ID,
-    "TEAMS_APP_PASSWORD": TEAMS_APP_PASSWORD,
-    "TEAMS_TENANT_ID": TEAMS_TENANT_ID,
-}
+def _required_discord():
+    return {
+        "DISCORD_TOKEN": DISCORD_TOKEN,
+    }
+
+
+def _required_teams_runtime():
+    return {
+        "TEAMS_APP_ID": TEAMS_APP_ID,
+        "TEAMS_APP_PASSWORD": TEAMS_APP_PASSWORD,
+        "TEAMS_TENANT_ID": TEAMS_TENANT_ID,
+    }
+
+
+def _required_teams_manifest():
+    return {
+        "TEAMS_APP_ID": TEAMS_APP_ID,
+        "TEAMS_MANIFEST_SHORT_NAME": TEAMS_MANIFEST_SHORT_NAME,
+        "TEAMS_MANIFEST_FULL_NAME": TEAMS_MANIFEST_FULL_NAME,
+        "TEAMS_MANIFEST_SHORT_DESCRIPTION": TEAMS_MANIFEST_SHORT_DESCRIPTION,
+        "TEAMS_MANIFEST_FULL_DESCRIPTION": TEAMS_MANIFEST_FULL_DESCRIPTION,
+        "TEAMS_MANIFEST_DEVELOPER_NAME": TEAMS_MANIFEST_DEVELOPER_NAME,
+        "TEAMS_MANIFEST_DEVELOPER_WEBSITE_URL": TEAMS_MANIFEST_DEVELOPER_WEBSITE_URL,
+        "TEAMS_MANIFEST_DEVELOPER_PRIVACY_URL": TEAMS_MANIFEST_DEVELOPER_PRIVACY_URL,
+        "TEAMS_MANIFEST_DEVELOPER_TERMS_URL": TEAMS_MANIFEST_DEVELOPER_TERMS_URL,
+        "TEAMS_MANIFEST_ACCENT_COLOR": TEAMS_MANIFEST_ACCENT_COLOR,
+    }
 
 
 def _check_range(name: str, value, min_val=None, max_val=None):
@@ -220,11 +299,33 @@ def validate(platform: str = "discord"):
     Verifica se todas as variaveis obrigatorias estao definidas.
     platform: 'discord' ou 'teams'
     """
-    required = dict(_REQUIRED_SHARED)
+    allowed_providers = {"gemini", "openai"}
+    if LLM_PROVIDER not in allowed_providers:
+        raise EnvironmentError(
+            f"LLM_PROVIDER invalido: {LLM_PROVIDER}. "
+            f"Use um de: {', '.join(sorted(allowed_providers))}."
+        )
+    if EMBEDDING_PROVIDER not in allowed_providers:
+        raise EnvironmentError(
+            f"EMBEDDING_PROVIDER invalido: {EMBEDDING_PROVIDER}. "
+            f"Use um de: {', '.join(sorted(allowed_providers))}."
+        )
+
+    required = dict(_required_shared_base())
+    if LLM_PROVIDER == "gemini":
+        required["GEMINI_API_KEY"] = GEMINI_API_KEY
+    else:
+        required["OPENAI_API_KEY"] = OPENAI_API_KEY
+
+    if EMBEDDING_PROVIDER == "gemini":
+        required.setdefault("GEMINI_API_KEY", GEMINI_API_KEY)
+    else:
+        required.setdefault("OPENAI_API_KEY", OPENAI_API_KEY)
+
     if platform == "discord":
-        required.update(_REQUIRED_DISCORD)
+        required.update(_required_discord())
     elif platform == "teams":
-        required.update(_REQUIRED_TEAMS)
+        required.update(_required_teams_runtime())
 
     missing = [name for name, val in required.items() if not val]
     if missing:
@@ -241,10 +342,59 @@ def validate(platform: str = "discord"):
         )
     _check_range("MAX_CONTEXT_CHUNKS", MAX_CONTEXT_CHUNKS, min_val=1, max_val=50)
     _check_range("SIMILARITY_THRESHOLD", SIMILARITY_THRESHOLD, min_val=0.0, max_val=1.0)
+    _check_range("RAG_MIN_STRONG_SIMILARITY", RAG_MIN_STRONG_SIMILARITY, min_val=0.0, max_val=1.0)
+    _check_range("RAG_FEEDBACK_MIN_SIMILARITY", RAG_FEEDBACK_MIN_SIMILARITY, min_val=0.0, max_val=1.0)
+    _check_range("RAG_MIN_RETRIEVED_CHUNKS", RAG_MIN_RETRIEVED_CHUNKS, min_val=1, max_val=30)
+    _check_range("RAG_OPERATIONAL_SIMILARITY_MARGIN", RAG_OPERATIONAL_SIMILARITY_MARGIN, min_val=0.0, max_val=0.5)
+    _check_range("RAG_MAX_REGEN_ATTEMPTS", RAG_MAX_REGEN_ATTEMPTS, min_val=0, max_val=3)
+    _check_range("RAG_FEEDBACK_TOP_K", RAG_FEEDBACK_TOP_K, min_val=1, max_val=20)
     _check_range("BUSINESS_RULES_MAX_CHARS", BUSINESS_RULES_MAX_CHARS, min_val=500, max_val=40000)
     _check_range("COOLDOWN_SECONDS", COOLDOWN_SECONDS, min_val=0)
     _check_range("ASK_TIMEOUT_SECONDS", ASK_TIMEOUT_SECONDS, min_val=5)
     _check_range("MAX_HISTORY_PAIRS", MAX_HISTORY_PAIRS, min_val=1)
     _check_range("EMBEDDING_BATCH_SIZE", EMBEDDING_BATCH_SIZE, min_val=1, max_val=100)
     _check_range("SIMILARITY_FLOOR_FACTOR", SIMILARITY_FLOOR_FACTOR, min_val=0.1, max_val=1.0)
-    _check_range("CONTEXTUAL_RETRIEVAL_MAX_DOC_CHARS", CONTEXTUAL_RETRIEVAL_MAX_DOC_CHARS, min_val=1000, max_val=32000)
+    _check_range("CONTEXTUAL_RETRIEVAL_MAX_DOC_CHARS", CONTEXTUAL_RETRIEVAL_MAX_DOC_CHARS, min_val=1000, max_val=2000000)
+    _check_range("CONTEXTUAL_RETRIEVAL_BATCH_SIZE", CONTEXTUAL_RETRIEVAL_BATCH_SIZE, min_val=1, max_val=200)
+
+    if RAG_ENABLE_BUSINESS_RULES:
+        rules_path = Path(BUSINESS_RULES_FILE)
+        if not rules_path.exists() or not rules_path.is_file():
+            raise EnvironmentError(
+                "RAG_ENABLE_BUSINESS_RULES=true, mas BUSINESS_RULES_FILE nao existe "
+                f"ou nao e arquivo: {BUSINESS_RULES_FILE}"
+            )
+
+
+def validate_teams_manifest():
+    """Valida as variaveis necessarias para gerar o pacote do Microsoft Teams."""
+    required = _required_teams_manifest()
+    missing = [name for name, val in required.items() if not val]
+    if missing:
+        raise EnvironmentError(
+            "Variaveis de ambiente obrigatorias para gerar o pacote do Teams nao definidas: "
+            f"{', '.join(missing)}. Verifique seu arquivo .env"
+        )
+
+    if not re.fullmatch(r"#[0-9A-Fa-f]{6}", TEAMS_MANIFEST_ACCENT_COLOR or ""):
+        raise EnvironmentError(
+            "TEAMS_MANIFEST_ACCENT_COLOR deve estar no formato #RRGGBB. "
+            f"Valor recebido: {TEAMS_MANIFEST_ACCENT_COLOR!r}"
+        )
+
+
+def get_teams_manifest_context() -> dict[str, str]:
+    """Retorna os valores usados para preencher o template do manifest do Teams."""
+    validate_teams_manifest()
+    return {
+        "TEAMS_APP_ID": TEAMS_APP_ID,
+        "TEAMS_MANIFEST_SHORT_NAME": TEAMS_MANIFEST_SHORT_NAME,
+        "TEAMS_MANIFEST_FULL_NAME": TEAMS_MANIFEST_FULL_NAME,
+        "TEAMS_MANIFEST_SHORT_DESCRIPTION": TEAMS_MANIFEST_SHORT_DESCRIPTION,
+        "TEAMS_MANIFEST_FULL_DESCRIPTION": TEAMS_MANIFEST_FULL_DESCRIPTION,
+        "TEAMS_MANIFEST_DEVELOPER_NAME": TEAMS_MANIFEST_DEVELOPER_NAME,
+        "TEAMS_MANIFEST_DEVELOPER_WEBSITE_URL": TEAMS_MANIFEST_DEVELOPER_WEBSITE_URL,
+        "TEAMS_MANIFEST_DEVELOPER_PRIVACY_URL": TEAMS_MANIFEST_DEVELOPER_PRIVACY_URL,
+        "TEAMS_MANIFEST_DEVELOPER_TERMS_URL": TEAMS_MANIFEST_DEVELOPER_TERMS_URL,
+        "TEAMS_MANIFEST_ACCENT_COLOR": TEAMS_MANIFEST_ACCENT_COLOR,
+    }

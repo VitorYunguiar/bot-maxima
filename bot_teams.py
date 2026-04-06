@@ -2,15 +2,22 @@
 bot_teams.py — Bot Microsoft Teams com RAG, usando a mesma base do bot Discord.
 
 Uso:
+    iniciar_teams.bat
     py bot_teams.py
 
+Pacote do Teams:
+    gerar_manifest_teams.bat
+    .\.venv\Scripts\python.exe scripts\build_teams_package.py
+
 Requer:
-    - TEAMS_APP_ID e TEAMS_APP_PASSWORD no .env (do Azure Bot Registration)
+    - Credenciais TEAMS_* no .env (Azure Bot Registration)
+    - Metadata TEAMS_MANIFEST_* no .env para gerar o pacote do Teams
     - URL publica apontando para porta TEAMS_PORT (default: 3978)
     - ngrok http 3978  (para testes locais)
 """
 
 import asyncio
+import json
 import logging
 import re
 import time
@@ -33,6 +40,57 @@ logger = logging.getLogger(__name__)
 
 # Historico e cooldown centralizados
 _conv = ConversationManager()
+
+
+def _parse_feedback_command_payload(payload: str) -> dict:
+    parts = [p.strip() for p in payload.split("||")]
+    if len(parts) < 3:
+        raise ValueError(
+            "Formato invalido. Use: corrigir pergunta || resposta_bot || resposta_corrigida "
+            "[|| level=global|tenant;tenant=...;erp=...;version=...] [|| tag1,tag2]"
+        )
+
+    question = parts[0]
+    bot_answer = parts[1]
+    corrected_answer = parts[2]
+    scope: dict[str, str] = {"level": "global"}
+    tags: list[str] = []
+
+    if len(parts) >= 4 and parts[3]:
+        for item in parts[3].split(";"):
+            if "=" not in item:
+                continue
+            key, value = item.split("=", 1)
+            key = key.strip().lower()
+            value = value.strip()
+            if key in {"level", "tenant", "erp", "version"} and value:
+                scope[key] = value
+
+    if len(parts) >= 5 and parts[4]:
+        tags = [t.strip() for t in parts[4].split(",") if t.strip()]
+
+    return {
+        "question": question,
+        "bot_answer": bot_answer,
+        "corrected_answer": corrected_answer,
+        "scope": scope,
+        "tags": tags,
+    }
+
+
+def _is_teams_admin(user_id: str) -> bool:
+    if not config.TEAMS_ADMIN_IDS:
+        return True
+    return str(user_id) in set(config.TEAMS_ADMIN_IDS)
+
+
+async def _require_admin(turn_context: TurnContext, user_id: str) -> bool:
+    if _is_teams_admin(user_id):
+        return True
+    await turn_context.send_activity(
+        "Comando restrito a revisores admins. Configure seu usuario em TEAMS_ADMIN_IDS."
+    )
+    return False
 
 
 # ── Bot Teams ────────────────────────────────────────────
@@ -78,6 +136,52 @@ class TeamsBot(ActivityHandler):
             await self._handle_help(turn_context)
             return
 
+        if lower.startswith("corrigir "):
+            await self._handle_corrigir(turn_context, user_id, text[len("corrigir "):].strip())
+            return
+
+        if lower in ("correcoes", "correcoes pendentes", "feedback pendentes"):
+            if not await _require_admin(turn_context, user_id):
+                return
+            await self._handle_correcoes_pendentes(turn_context)
+            return
+
+        if lower.startswith("aprovar-correcao "):
+            if not await _require_admin(turn_context, user_id):
+                return
+            payload = text[len("aprovar-correcao "):].strip()
+            if not payload:
+                await turn_context.send_activity("Uso: aprovar-correcao <id> [observacao]")
+                return
+            parts = payload.split(" ", 1)
+            feedback_id = parts[0].strip()
+            note = parts[1].strip() if len(parts) > 1 else ""
+            await self._handle_aprovar_correcao(turn_context, user_id, feedback_id, note)
+            return
+
+        if lower.startswith("rejeitar-correcao "):
+            if not await _require_admin(turn_context, user_id):
+                return
+            payload = text[len("rejeitar-correcao "):].strip()
+            if not payload:
+                await turn_context.send_activity("Uso: rejeitar-correcao <id> [motivo]")
+                return
+            parts = payload.split(" ", 1)
+            feedback_id = parts[0].strip()
+            note = parts[1].strip() if len(parts) > 1 else ""
+            await self._handle_rejeitar_correcao(turn_context, user_id, feedback_id, note)
+            return
+
+        if lower.startswith("publicar-correcao "):
+            if not await _require_admin(turn_context, user_id):
+                return
+            feedback_id = text[len("publicar-correcao "):].strip()
+            if not feedback_id:
+                await turn_context.send_activity("Uso: publicar-correcao <id>")
+                return
+            await self._handle_publicar_correcao(turn_context, user_id, feedback_id)
+            return
+
         # Pergunta via RAG
         await self._handle_question(turn_context, user_id, conv_id, text)
 
@@ -106,8 +210,16 @@ class TeamsBot(ActivityHandler):
 
         t_start = time.monotonic()
         try:
-            answer, chunks = await asyncio.wait_for(
-                asyncio.to_thread(rag.ask, question, list(history)),
+            answer, chunks, trace = await asyncio.wait_for(
+                asyncio.to_thread(
+                    rag.ask,
+                    question,
+                    list(history),
+                    None,
+                    config.SYSTEM_PROMPT_TEAMS,
+                    "teams",
+                    None,
+                ),
                 timeout=config.ASK_TIMEOUT_SECONDS,
             )
         except asyncio.TimeoutError:
@@ -124,12 +236,22 @@ class TeamsBot(ActivityHandler):
         history.append({"role": "assistant", "content": answer})
         _conv.trim_history(conv_id)
 
-        # Registrar knowledge gap se similaridade baixa
-        max_sim = (
-            max((rag._safe_similarity(c.get("similarity", 0)) for c in chunks), default=0.0)
-            if chunks
-            else 0.0
+        logger.info(
+            "ANSWER_TRACE %s",
+            json.dumps(
+                {
+                    "platform": "teams",
+                    "user_id": user_id,
+                    "conversation_id": conv_id,
+                    "elapsed_ms": int(elapsed * 1000),
+                    "trace": trace,
+                },
+                ensure_ascii=False,
+            ),
         )
+
+        # Registrar knowledge gap se similaridade baixa
+        max_sim = rag._safe_similarity(trace.get("top_similarity", 0.0))
         if max_sim < config.CONFIDENCE_THRESHOLD:
             asyncio.get_running_loop().run_in_executor(
                 None, rag.log_knowledge_gap, question, max_sim, "teams"
@@ -150,12 +272,13 @@ class TeamsBot(ActivityHandler):
         """Mostra estatisticas da base."""
         try:
             stats = await asyncio.to_thread(rag.get_stats)
+            model_info = await asyncio.to_thread(rag.get_model_config)
             msg = (
                 f"**Status da Base de Conhecimento**\n\n"
                 f"- Documentos: **{stats.get('total_documents', 0)}**\n"
                 f"- Chunks indexados: **{stats.get('total_chunks', 0)}**\n"
-                f"- Modelo: {config.GEMINI_MODEL}\n"
-                f"- Embeddings: {config.EMBEDDING_MODEL}"
+                f"- Modelo: {model_info.get('generation_model')} ({model_info.get('llm_provider')})\n"
+                f"- Embeddings: {model_info.get('embedding_model')} ({model_info.get('embedding_provider')})"
             )
             await turn_context.send_activity(msg)
         except Exception as e:
@@ -180,22 +303,122 @@ class TeamsBot(ActivityHandler):
         except Exception as e:
             await turn_context.send_activity(f"Erro ao listar documentos: {e}")
 
+    async def _handle_corrigir(self, turn_context: TurnContext, user_id: str, payload: str):
+        try:
+            parsed = _parse_feedback_command_payload(payload)
+            feedback_id = await asyncio.to_thread(
+                rag.submit_feedback_item,
+                query=parsed["question"],
+                bot_answer=parsed["bot_answer"],
+                corrected_answer=parsed["corrected_answer"],
+                tags=parsed["tags"],
+                scope=parsed["scope"],
+                created_by=f"teams:{user_id}",
+                platform="teams",
+                source_message_id=turn_context.activity.id,
+            )
+            await turn_context.send_activity(
+                f"Correcao registrada com sucesso. ID: `{feedback_id}` (status: `PENDING`)."
+            )
+        except Exception as e:
+            await turn_context.send_activity(f"Erro ao registrar correcao: {e}")
+
+    async def _handle_correcoes_pendentes(self, turn_context: TurnContext):
+        try:
+            pending = await asyncio.to_thread(rag.list_pending_feedback_items, 10)
+            if not pending:
+                await turn_context.send_activity("Nao ha correcoes pendentes.")
+                return
+            lines = ["**Correcoes Pendentes**\n"]
+            for item in pending:
+                feedback_id = item.get("id", "?")
+                question = (item.get("query") or "?")[:120]
+                scope = item.get("scope") or {}
+                if isinstance(scope, dict):
+                    scope_txt = ", ".join(
+                        f"{k}={v}" for k, v in scope.items() if str(v).strip()
+                    ) or "global"
+                else:
+                    scope_txt = "global"
+                lines.append(f"- `{feedback_id}` | {scope_txt} | {question}")
+            await turn_context.send_activity("\n".join(lines))
+        except Exception as e:
+            await turn_context.send_activity(f"Erro ao listar correcoes pendentes: {e}")
+
+    async def _handle_aprovar_correcao(
+        self,
+        turn_context: TurnContext,
+        user_id: str,
+        feedback_id: str,
+        note: str = "",
+    ):
+        try:
+            await asyncio.to_thread(
+                rag.approve_feedback_item,
+                feedback_id,
+                f"teams:{user_id}",
+                note or None,
+            )
+            await turn_context.send_activity(f"Correcao `{feedback_id}` aprovada.")
+        except Exception as e:
+            await turn_context.send_activity(f"Erro ao aprovar correcao: {e}")
+
+    async def _handle_rejeitar_correcao(
+        self,
+        turn_context: TurnContext,
+        user_id: str,
+        feedback_id: str,
+        note: str = "",
+    ):
+        try:
+            await asyncio.to_thread(
+                rag.reject_feedback_item,
+                feedback_id,
+                f"teams:{user_id}",
+                note or None,
+            )
+            await turn_context.send_activity(f"Correcao `{feedback_id}` rejeitada.")
+        except Exception as e:
+            await turn_context.send_activity(f"Erro ao rejeitar correcao: {e}")
+
+    async def _handle_publicar_correcao(
+        self,
+        turn_context: TurnContext,
+        user_id: str,
+        feedback_id: str,
+    ):
+        try:
+            chunk_id = await asyncio.to_thread(
+                rag.publish_feedback_item,
+                feedback_id,
+                f"teams:{user_id}",
+                None,
+            )
+            await turn_context.send_activity(
+                f"Correcao `{feedback_id}` publicada na memoria vetorial. Chunk: `{chunk_id}`."
+            )
+        except Exception as e:
+            await turn_context.send_activity(f"Erro ao publicar correcao: {e}")
+
     async def _handle_help(self, turn_context: TurnContext):
         """Mostra comandos disponiveis."""
         msg = (
-            "**Sabidao — Assistente Tecnico Maxima**\n\n"
+            "**Sabidao - Assistente Tecnico Maxima**\n\n"
             "Consulto a base de documentos para responder perguntas sobre "
             "maxPedido, ERPs e ferramentas de gestao.\n\n"
             "**Como usar:**\n"
             "- Envie qualquer mensagem para perguntar sobre os documentos\n"
             "- Exemplo: *Como configurar o parametro USAGRADE no maxPedido?*\n\n"
             "**Comandos:**\n"
-            "- **status** — estatisticas da base de conhecimento\n"
-            "- **fontes** — lista de documentos indexados\n"
-            "- **limpar** — limpa o historico de conversa\n"
-            "- **ping** — verifica se o bot esta ativo\n"
-            "- **ajuda** — esta mensagem\n\n"
-            "💡 *Dica: quanto mais especifica a pergunta, melhor a resposta.*"
+            "- **status** - estatisticas da base de conhecimento\n"
+            "- **fontes** - lista de documentos indexados\n"
+            "- **limpar** - limpa o historico de conversa\n"
+            "- **ping** - verifica se o bot esta ativo\n"
+            "- **ajuda** - esta mensagem\n"
+            "- **corrigir <payload>** - registra correcao para revisao\n"
+            "- **correcoes pendentes** - (admin) lista fila de revisao\n"
+            "- **aprovar-correcao <id>** / **rejeitar-correcao <id>** / **publicar-correcao <id>** - (admin)\n\n"
+            "Dica: quanto mais especifica a pergunta, melhor a resposta."
         )
         await turn_context.send_activity(msg)
 

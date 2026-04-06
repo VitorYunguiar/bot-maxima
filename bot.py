@@ -4,6 +4,7 @@ bot.py — Bot Discord com RAG, replicando o Claude Projects.
 
 import asyncio
 import base64
+import json
 import logging
 import re
 import time
@@ -94,16 +95,74 @@ def _markdown_table_to_codeblock(text: str) -> str:
 
 async def send_split_response(target, response: str, is_reply: bool = True):
     """Envia resposta dividida em partes se necessario."""
-    parts = split_message(response, limit=config.DISCORD_MSG_LIMIT)
+    channel = target.channel if hasattr(target, "channel") else target
+
+    # Hardening: garante texto valido para evitar falha silenciosa no envio.
+    if isinstance(response, str):
+        safe_response = response
+    elif response is None:
+        safe_response = ""
+    else:
+        safe_response = str(response)
+
+    if not safe_response.strip():
+        safe_response = "Nao foi possivel gerar uma resposta agora. Tente novamente em instantes."
+
+    parts = split_message(safe_response, limit=config.DISCORD_MSG_LIMIT)
+    logger.info("Enviando resposta em %d parte(s), total_chars=%d", len(parts), len(safe_response))
     for i, part in enumerate(parts):
         try:
-            if i == 0 and is_reply:
-                await target.reply(part)
-            else:
-                channel = target.channel if hasattr(target, "channel") else target
-                await channel.send(part)
-        except discord.HTTPException as e:
-            logger.error("Erro ao enviar mensagem: %s", e)
+            if i == 0 and is_reply and hasattr(target, "reply"):
+                try:
+                    await target.reply(part)
+                    continue
+                except Exception as reply_error:
+                    logger.warning("Falha no reply(); tentando channel.send(): %s", reply_error)
+
+            await channel.send(part)
+        except Exception as e:
+            logger.error("Erro ao enviar mensagem (parte %d/%d): %s", i + 1, len(parts), e)
+
+
+def _parse_feedback_command_payload(payload: str) -> dict:
+    """
+    Formato esperado:
+      pergunta || resposta_bot || resposta_corrigida || key=value;key=value || tag1,tag2
+    Apenas os 3 primeiros campos sao obrigatorios.
+    """
+    parts = [p.strip() for p in payload.split("||")]
+    if len(parts) < 3:
+        raise ValueError(
+            "Formato invalido. Use: pergunta || resposta_bot || resposta_corrigida "
+            "[|| level=global|tenant;tenant=...;erp=...;version=...] [|| tag1,tag2]"
+        )
+
+    question = parts[0]
+    bot_answer = parts[1]
+    corrected_answer = parts[2]
+    scope: dict[str, str] = {"level": "global"}
+    tags: list[str] = []
+
+    if len(parts) >= 4 and parts[3]:
+        for item in parts[3].split(";"):
+            if "=" not in item:
+                continue
+            key, value = item.split("=", 1)
+            key = key.strip().lower()
+            value = value.strip()
+            if key in {"level", "tenant", "erp", "version"} and value:
+                scope[key] = value
+
+    if len(parts) >= 5 and parts[4]:
+        tags = [t.strip() for t in parts[4].split(",") if t.strip()]
+
+    return {
+        "question": question,
+        "bot_answer": bot_answer,
+        "corrected_answer": corrected_answer,
+        "scope": scope,
+        "tags": tags,
+    }
 
 
 # ── Eventos ───────────────────────────────────────────────
@@ -227,8 +286,16 @@ async def handle_question(target, user_id: int, channel_id: int, question: str, 
 
         t_start = time.monotonic()
         try:
-            answer, chunks = await asyncio.wait_for(
-                asyncio.to_thread(rag.ask, question, list(history), images),
+            answer, chunks, trace = await asyncio.wait_for(
+                asyncio.to_thread(
+                    rag.ask,
+                    question,
+                    list(history),
+                    images,
+                    None,
+                    "discord",
+                    None,
+                ),
                 timeout=config.ASK_TIMEOUT_SECONDS,
             )
         except asyncio.TimeoutError:
@@ -242,24 +309,40 @@ async def handle_question(target, user_id: int, channel_id: int, question: str, 
             return
         elapsed = time.monotonic() - t_start
 
+        if isinstance(answer, str):
+            answer_text = answer
+        else:
+            logger.warning("Resposta do RAG nao-string (%s). Convertendo para texto.", type(answer).__name__)
+            answer_text = str(answer)
+
         # Atualizar historico (sem imagens para nao estourar memoria)
         history.append({"role": "user", "content": question})
-        history.append({"role": "assistant", "content": answer})
+        history.append({"role": "assistant", "content": answer_text})
         _conv.trim_history(channel_id)
 
-        # Registrar knowledge gap se similaridade baixa
-        max_sim = (
-            max((rag._safe_similarity(c.get("similarity", 0)) for c in chunks), default=0.0)
-            if chunks
-            else 0.0
+        logger.info(
+            "ANSWER_TRACE %s",
+            json.dumps(
+                {
+                    "platform": "discord",
+                    "user_id": user_id,
+                    "channel_id": channel_id,
+                    "elapsed_ms": int(elapsed * 1000),
+                    "trace": trace,
+                },
+                ensure_ascii=False,
+            ),
         )
+
+        # Registrar knowledge gap se similaridade baixa
+        max_sim = rag._safe_similarity(trace.get("top_similarity", 0.0))
         if max_sim < config.CONFIDENCE_THRESHOLD:
             asyncio.get_running_loop().run_in_executor(
                 None, rag.log_knowledge_gap, question, max_sim, "discord"
             )
 
         # Formatar e enviar (converter tabelas Markdown para code blocks)
-        response = _markdown_table_to_codeblock(answer)
+        response = _markdown_table_to_codeblock(answer_text)
         await send_split_response(target, response)
 
 
@@ -280,6 +363,7 @@ async def cmd_status(ctx: commands.Context):
     async with ctx.typing():
         try:
             stats = rag.get_stats()
+            model_info = rag.get_model_config()
             embed = discord.Embed(
                 title="Status da Base de Conhecimento",
                 color=discord.Color.blue(),
@@ -291,10 +375,14 @@ async def cmd_status(ctx: commands.Context):
                 name="Chunks indexados", value=str(stats.get("total_chunks", 0)), inline=True
             )
             embed.add_field(
-                name="Modelo", value=config.GEMINI_MODEL, inline=False
+                name="Modelo",
+                value=f"{model_info.get('generation_model')} ({model_info.get('llm_provider')})",
+                inline=False,
             )
             embed.add_field(
-                name="Embeddings", value=config.EMBEDDING_MODEL, inline=False
+                name="Embeddings",
+                value=f"{model_info.get('embedding_model')} ({model_info.get('embedding_provider')})",
+                inline=False,
             )
             await ctx.reply(embed=embed)
         except Exception as e:
@@ -397,6 +485,124 @@ async def cmd_lacunas(ctx: commands.Context):
 
 # ── Comando: ajuda ───────────────────────────────────────
 
+
+
+# -- Comandos: correcoes (review queue) ----------------------------------------
+
+@bot.command(name="corrigir")
+async def cmd_corrigir(ctx: commands.Context, *, payload: str):
+    """
+    Registra uma correcao para revisao.
+    Formato:
+      !corrigir pergunta || resposta_bot || resposta_corrigida || level=tenant;tenant=ACME;erp=Winthor || tag1,tag2
+    """
+    try:
+        parsed = _parse_feedback_command_payload(payload)
+        feedback_id = await asyncio.to_thread(
+            rag.submit_feedback_item,
+            query=parsed["question"],
+            bot_answer=parsed["bot_answer"],
+            corrected_answer=parsed["corrected_answer"],
+            tags=parsed["tags"],
+            scope=parsed["scope"],
+            created_by=f"discord:{ctx.author.id}",
+            platform="discord",
+            source_message_id=str(ctx.message.id),
+        )
+        await ctx.reply(
+            f"Correcao registrada com sucesso. ID: `{feedback_id}` (status: `PENDING`)."
+        )
+    except Exception as e:
+        await ctx.reply(f"Erro ao registrar correcao: {e}")
+
+
+@bot.command(name="correcoes", aliases=["correcoes_pendentes", "correcoes-pendentes"])
+@commands.has_permissions(administrator=True)
+async def cmd_correcoes(ctx: commands.Context, action: str = "pendentes", limit: int = 10):
+    """Lista correcoes pendentes para revisao."""
+    if action.lower() not in {"pendentes", "pending"}:
+        await ctx.reply("Uso: `!correcoes pendentes [limite]`")
+        return
+    async with ctx.typing():
+        try:
+            pending = await asyncio.to_thread(rag.list_pending_feedback_items, limit)
+            if not pending:
+                await ctx.reply("Nao ha correcoes pendentes.")
+                return
+            embed = discord.Embed(
+                title="Correcoes Pendentes",
+                description="Fila de revisao para memoria de correcoes:",
+                color=discord.Color.blurple(),
+            )
+            for item in pending[:25]:
+                feedback_id = item.get("id", "?")
+                question = (item.get("query") or "?")[:120]
+                scope = item.get("scope") or {}
+                if isinstance(scope, dict):
+                    scope_txt = ", ".join(
+                        f"{k}={v}" for k, v in scope.items() if str(v).strip()
+                    ) or "global"
+                else:
+                    scope_txt = "global"
+                embed.add_field(
+                    name=f"{feedback_id}",
+                    value=f"**Pergunta:** {question}\n**Escopo:** {scope_txt}",
+                    inline=False,
+                )
+            await ctx.reply(embed=embed)
+        except Exception as e:
+            await ctx.reply(f"Erro ao listar correcoes pendentes: {e}")
+
+
+@bot.command(name="aprovar_correcao", aliases=["aprovar-correcao"])
+@commands.has_permissions(administrator=True)
+async def cmd_aprovar_correcao(ctx: commands.Context, feedback_id: str, *, note: str = ""):
+    """Aprova uma correcao pendente."""
+    try:
+        await asyncio.to_thread(
+            rag.approve_feedback_item,
+            feedback_id,
+            f"discord:{ctx.author.id}",
+            note or None,
+        )
+        await ctx.reply(f"Correcao `{feedback_id}` aprovada.")
+    except Exception as e:
+        await ctx.reply(f"Erro ao aprovar correcao: {e}")
+
+
+@bot.command(name="rejeitar_correcao", aliases=["rejeitar-correcao"])
+@commands.has_permissions(administrator=True)
+async def cmd_rejeitar_correcao(ctx: commands.Context, feedback_id: str, *, note: str = ""):
+    """Rejeita uma correcao pendente."""
+    try:
+        await asyncio.to_thread(
+            rag.reject_feedback_item,
+            feedback_id,
+            f"discord:{ctx.author.id}",
+            note or None,
+        )
+        await ctx.reply(f"Correcao `{feedback_id}` rejeitada.")
+    except Exception as e:
+        await ctx.reply(f"Erro ao rejeitar correcao: {e}")
+
+
+@bot.command(name="publicar_correcao", aliases=["publicar-correcao"])
+@commands.has_permissions(administrator=True)
+async def cmd_publicar_correcao(ctx: commands.Context, feedback_id: str):
+    """Publica correcao aprovada na memoria vetorial."""
+    try:
+        chunk_id = await asyncio.to_thread(
+            rag.publish_feedback_item,
+            feedback_id,
+            f"discord:{ctx.author.id}",
+            None,
+        )
+        await ctx.reply(
+            f"Correcao `{feedback_id}` publicada na memoria vetorial. Chunk: `{chunk_id}`."
+        )
+    except Exception as e:
+        await ctx.reply(f"Erro ao publicar correcao: {e}")
+
 @bot.command(name="ajuda", aliases=["h"])
 async def cmd_ajuda(ctx: commands.Context):
     """Mostra os comandos disponiveis e como usar o bot."""
@@ -436,6 +642,24 @@ async def cmd_ajuda(ctx: commands.Context):
     embed.add_field(
         name=f"`{config.COMMAND_PREFIX}ping`",
         value="Verifica se o bot esta online.",
+        inline=False,
+    )
+    embed.add_field(
+        name=f"`{config.COMMAND_PREFIX}corrigir <payload>`",
+        value=(
+            "Registra correcao para revisao. Formato: "
+            "`pergunta || resposta_bot || resposta_corrigida || level=...;tenant=... || tag1,tag2`"
+        ),
+        inline=False,
+    )
+    embed.add_field(
+        name=f"`{config.COMMAND_PREFIX}correcoes pendentes`",
+        value="(Admin) Lista fila de revisao de correcoes.",
+        inline=False,
+    )
+    embed.add_field(
+        name=f"`{config.COMMAND_PREFIX}aprovar-correcao <id>` / `{config.COMMAND_PREFIX}rejeitar-correcao <id>` / `{config.COMMAND_PREFIX}publicar-correcao <id>`",
+        value="(Admin) Aprova, rejeita ou publica correcoes na memoria vetorial.",
         inline=False,
     )
     embed.set_footer(text="Dica: Anexe screenshots para analise de erros e telas do sistema.")

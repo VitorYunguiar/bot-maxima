@@ -36,6 +36,7 @@ from rag import (
     QUERY_MODULE_HINTS,
     create_document_embeddings,
     embedding_to_pgvector,
+    get_model_config,
     supabase_delete,
     supabase_insert,
     supabase_select,
@@ -302,7 +303,7 @@ def _embed_batch_with_retry(contents: list[str], filename: str, first_chunk_inde
 
             delay = _retry_delay_seconds(exc, attempt)
             logger.warning(
-                "Gemini quota em %s (chunk %s, tentativa %s/%s). Aguardando %.1fs...",
+                "Limite de embeddings em %s (chunk %s, tentativa %s/%s). Aguardando %.1fs...",
                 filename,
                 first_chunk_index,
                 attempt,
@@ -679,7 +680,94 @@ def _load_urls_from_file(filepath: str) -> list[str]:
 
 _last_contextual_call_at = 0.0
 _CONTEXTUAL_MIN_INTERVAL = 2.0  # segundos entre chamadas (evita 429)
-_CONTEXTUAL_BATCH_SIZE = 10     # chunks por chamada LLM
+_CONTEXTUAL_BATCH_SIZE = max(1, int(config.CONTEXTUAL_RETRIEVAL_BATCH_SIZE))  # chunks por chamada LLM
+
+
+def _extract_json_fragment(raw_text: str) -> str:
+    text = (raw_text or "").strip()
+    if not text:
+        return text
+
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
+        text = re.sub(r"\s*```$", "", text)
+        text = text.strip()
+
+    for opening, closing in (("[", "]"), ("{", "}")):
+        start = text.find(opening)
+        end = text.rfind(closing)
+        if start >= 0 and end > start:
+            candidate = text[start:end + 1].strip()
+            if candidate:
+                return candidate
+    return text
+
+
+def _context_to_text(value) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, dict):
+        for key in ("context", "text", "texto", "summary", "value"):
+            field = value.get(key)
+            if isinstance(field, str) and field.strip():
+                return field.strip()
+    return str(value).strip()
+
+
+def _normalize_contextual_payload(payload, expected_count: int) -> dict[int, str]:
+    contexts: dict[int, str] = {}
+
+    if isinstance(payload, dict):
+        if isinstance(payload.get("contexts"), list):
+            payload = payload["contexts"]
+        else:
+            for key, value in payload.items():
+                try:
+                    idx = int(key)
+                except (TypeError, ValueError):
+                    continue
+                if 0 <= idx < expected_count:
+                    text = _context_to_text(value)
+                    if text:
+                        contexts[idx] = text
+            return contexts
+
+    if not isinstance(payload, list):
+        return contexts
+
+    # Formato 1: lista simples de strings (ordem do chunk)
+    if payload and all(not isinstance(item, dict) for item in payload):
+        for idx, value in enumerate(payload):
+            if idx >= expected_count:
+                break
+            text = _context_to_text(value)
+            if text:
+                contexts[idx] = text
+        return contexts
+
+    # Formato 2: lista de objetos com id/context
+    for idx, item in enumerate(payload):
+        if isinstance(item, dict):
+            raw_id = item.get("id", item.get("chunk_id", idx))
+            try:
+                context_idx = int(raw_id)
+            except (TypeError, ValueError):
+                context_idx = idx
+            if not (0 <= context_idx < expected_count):
+                continue
+            text = _context_to_text(item)
+            if text:
+                contexts[context_idx] = text
+            continue
+
+        if idx < expected_count:
+            text = _context_to_text(item)
+            if text:
+                contexts[idx] = text
+
+    return contexts
 
 
 def _wait_for_contextual_slot() -> None:
@@ -727,18 +815,17 @@ def _contextualize_chunks_batch(
         f"<documento>\n{truncated_doc}\n</documento>\n\n"
         f"Abaixo estao {len(chunks_with_indices)} chunks extraidos deste documento:\n\n"
         f"{chunks_section}"
-        "Para CADA chunk, forneca um contexto curto e sucinto (1-2 frases) que situe "
+        "Para CADA chunk, forneca um contexto MUITO CURTO (maximo 20 palavras, 1 frase) que situe "
         "o chunk no documento geral, melhorando a busca por similaridade semantica. "
-        "Inclua: de qual secao se trata, o tema principal, e termos tecnicos relevantes "
-        "(nomes de tabelas, parametros, telas, modulos).\n\n"
+        "Inclua: secao, tema principal e termos tecnicos chave (tabelas, parametros, modulos). "
+        "IMPORTANTE: seja extremamente conciso — 1 frase curta por chunk.\n\n"
         "Responda com um JSON array onde cada elemento e o contexto do chunk correspondente, "
         "na mesma ordem. Exemplo para 3 chunks:\n"
         '[\"contexto do chunk 0\", \"contexto do chunk 1\", \"contexto do chunk 2\"]\n\n'
         "JSON array:"
     )
 
-    # max_tokens proporcional ao numero de chunks (~80 tokens por contexto)
-    max_tokens = min(4096, len(chunks_with_indices) * 100)
+    max_tokens = 65536  # max output do Gemini 2.5 Flash
 
     try:
         from rag import _gemini_generate
@@ -752,39 +839,47 @@ def _contextualize_chunks_batch(
         )
         raw_text = response.text.strip()
 
-        # Limpar markdown fences se o modelo envolver em ```json```
-        if raw_text.startswith("```"):
-            raw_text = re.sub(r"^```\w*\n?", "", raw_text)
-            raw_text = re.sub(r"\n?```$", "", raw_text)
+        payload = json.loads(_extract_json_fragment(raw_text))
+        contexts_map = _normalize_contextual_payload(payload, len(chunks_with_indices))
 
-        contexts = json.loads(raw_text)
-
-        if not isinstance(contexts, list) or len(contexts) != len(chunks_with_indices):
+        if not contexts_map:
             logger.warning(
-                "Contextual Retrieval batch para %s: esperava %d contextos, recebeu %d. Usando chunks originais.",
-                filename, len(chunks_with_indices), len(contexts) if isinstance(contexts, list) else 0,
+                "Contextual Retrieval batch para %s: resposta sem contextos aproveitaveis. Usando chunks originais.",
+                filename,
             )
             return chunks_with_indices
 
-        # Aplicar contextos aos chunks
+        # Aplicar contextos aos chunks (fallback parcial para os faltantes)
         result = []
-        for (chunk_index, content), context in zip(chunks_with_indices, contexts):
-            ctx = str(context).strip() if context else ""
+        for local_idx, (chunk_index, content) in enumerate(chunks_with_indices):
+            ctx = contexts_map.get(local_idx, "")
             if ctx:
                 result.append((chunk_index, f"{ctx}\n\n{content}"))
             else:
                 result.append((chunk_index, content))
 
+        contextualized_count = sum(1 for local_idx in range(len(chunks_with_indices)) if contexts_map.get(local_idx))
+        if contextualized_count < len(chunks_with_indices):
+            logger.warning(
+                "Contextual Retrieval batch para %s: esperado=%d, recebido=%d, aplicado=%d (fallback parcial).",
+                filename,
+                len(chunks_with_indices),
+                len(contexts_map),
+                contextualized_count,
+            )
+
         logger.info(
-            "Contextual Retrieval: %d chunks contextualizados para %s",
-            len(result), filename,
+            "Contextual Retrieval: %d/%d chunks contextualizados para %s",
+            contextualized_count,
+            len(chunks_with_indices),
+            filename,
         )
         return result
 
     except json.JSONDecodeError as e:
         logger.warning(
-            "Contextual Retrieval batch para %s: JSON invalido: %s. Usando chunks originais.",
-            filename, e,
+            "Contextual Retrieval batch para %s: JSON invalido: %s. Raw: %.200r. Usando chunks originais.",
+            filename, e, raw_text,
         )
         return chunks_with_indices
 
@@ -852,9 +947,13 @@ def _ingest_text_source(
     logger.info("%s chunks gerados para %s", len(chunks), filename)
     logger.info("Modulo inferido para %s: %s", filename, module)
     if config.CONTEXTUAL_RETRIEVAL_ENABLED:
+        model_cfg = get_model_config()
         logger.info(
-            "Contextual Retrieval ATIVO para %s (%d chunks serao enriquecidos via %s)",
-            filename, len(chunks), config.CONTEXTUAL_RETRIEVAL_MODEL,
+            "Contextual Retrieval ATIVO para %s (%d chunks serao enriquecidos via %s/%s)",
+            filename,
+            len(chunks),
+            model_cfg.get("llm_provider", "gemini"),
+            model_cfg.get("contextual_model", config.CONTEXTUAL_RETRIEVAL_MODEL),
         )
     # P1.3: Inferir prioridade do documento
     doc_priority = _infer_priority(filename, chunk_count=len(chunks))
@@ -862,8 +961,13 @@ def _ingest_text_source(
     existing = supabase_select("documents", select="id", filters={"filename": f"eq.{filename}"})
 
     if existing and force:
-        temp_filename = f"__ingesting__{filename}"
-        logger.info("Re-ingestao segura: inserindo %s com nome temporario", filename)
+        old_doc_id = existing[0]["id"]
+        logger.info("Removendo documento anterior para re-ingestao: %s", filename)
+        try:
+            supabase_delete("document_chunks", "document_id", old_doc_id)
+        except Exception as e:
+            logger.warning("Erro ao remover chunks antigos de %s: %s", filename, e)
+        supabase_delete("documents", "id", old_doc_id)
     elif existing and not force:
         logger.info("Pulando %s (ja indexado). Use --force para re-ingerir.", filename)
         return {
@@ -872,14 +976,11 @@ def _ingest_text_source(
             "failed_chunks": 0,
             "skipped": True,
         }
-    else:
-        temp_filename = None
 
-    insert_filename = temp_filename if temp_filename else filename
     doc_result = supabase_insert(
         "documents",
         {
-            "filename": insert_filename,
+            "filename": filename,
             "title": title,
             "source": source,
             "doc_type": doc_type,
@@ -982,21 +1083,7 @@ def _ingest_text_source(
             "error": "nenhum chunk inserido",
         }
 
-    if temp_filename and existing:
-        existing_doc_id = existing[0]["id"]
-        try:
-            supabase_delete("documents", "id", existing_doc_id)
-            logger.info("Documento anterior removido: %s", filename)
-        except Exception as e:
-            logger.error("Erro ao remover documento anterior %s: %s", filename, e)
-
-        supabase_update(
-            "documents",
-            {"filename": filename, "chunk_count": total_inserted},
-            {"id": f"eq.{doc_id}"},
-        )
-    else:
-        supabase_update("documents", {"chunk_count": total_inserted}, {"id": f"eq.{doc_id}"})
+    supabase_update("documents", {"chunk_count": total_inserted}, {"id": f"eq.{doc_id}"})
 
     _save_failed_report_entry(
         filename=filename,

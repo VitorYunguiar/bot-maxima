@@ -29,5 +29,16 @@ After the base setup script, run optional migrations according to the features y
 - `sql/add_knowledge_gaps.sql`: creates `knowledge_gaps` table and RPCs:
   - `upsert_knowledge_gap`
   - `get_top_knowledge_gaps`
+- `sql/add_feedback_memory.sql`: creates reviewed correction memory tables + RPCs:
+  - `submit_feedback`
+  - `list_pending_feedback`
+  - `approve_feedback`
+  - `reject_feedback`
+  - `publish_feedback`
+  - `search_feedback_chunks`
+- `sql/add_evaluation_tables.sql`: creates benchmark tables:
+  - `evaluation_runs`
+  - `evaluation_results`
+  - `evaluation_run_summary` (view)
 
 If these RPCs are missing in Supabase, the bot will receive `404 / PGRST202` from `/rest/v1/rpc/...`.

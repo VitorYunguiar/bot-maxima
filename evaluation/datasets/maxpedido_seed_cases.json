@@ -1,0 +1,98 @@
+﻿[
+  {
+    "id": "cfg-usagrade",
+    "question": "Como configurar o parametro USAGRADE no maxPedido?",
+    "expected_behavior": "exact_answer",
+    "expected_intent": "configuration",
+    "scope": {"level": "global"},
+    "source": "seed"
+  },
+  {
+    "id": "cfg-paramfilial-132",
+    "question": "Onde ajusto a rotina ParamFilial 132 para pedidos no maxPedido?",
+    "expected_behavior": "exact_answer",
+    "expected_intent": "configuration",
+    "scope": {"level": "global"},
+    "source": "seed"
+  },
+  {
+    "id": "proc-cliente-bloqueado",
+    "question": "O que validar quando cliente bloqueado impede envio de pedido?",
+    "expected_behavior": "exact_answer",
+    "expected_intent": "process",
+    "scope": {"level": "global"},
+    "source": "seed"
+  },
+  {
+    "id": "proc-filial-retira",
+    "question": "Qual o fluxo de filial retira no maxPedido?",
+    "expected_behavior": "exact_answer",
+    "expected_intent": "process",
+    "scope": {"level": "global"},
+    "source": "seed"
+  },
+  {
+    "id": "int-statuspedidos",
+    "question": "Como funciona a integracao de statuspedidos entre maxPedido e ERP?",
+    "expected_behavior": "exact_answer",
+    "expected_intent": "integration",
+    "scope": {"level": "global"},
+    "source": "seed"
+  },
+  {
+    "id": "int-json-retorno",
+    "question": "Quais validacoes devo fazer no json_retorno de integracao de pedidos?",
+    "expected_behavior": "exact_answer",
+    "expected_intent": "integration",
+    "scope": {"level": "global"},
+    "source": "seed"
+  },
+  {
+    "id": "sql-mxsintegracaopedido",
+    "question": "Qual select ajuda a investigar a tabela mxsintegracaopedido?",
+    "expected_behavior": "exact_answer",
+    "expected_intent": "sql_lookup",
+    "scope": {"level": "global"},
+    "source": "seed"
+  },
+  {
+    "id": "sql-historico-critica",
+    "question": "Quais campos da mxshistoricocritica sao usados para diagnostico?",
+    "expected_behavior": "exact_answer",
+    "expected_intent": "sql_lookup",
+    "scope": {"level": "global"},
+    "source": "seed"
+  },
+  {
+    "id": "trb-sincronizacao",
+    "question": "Pedido nao sincroniza para o ERP. Qual checklist devo seguir?",
+    "expected_behavior": "exact_answer",
+    "expected_intent": "troubleshooting",
+    "scope": {"level": "global"},
+    "source": "seed"
+  },
+  {
+    "id": "trb-critica-integracao",
+    "question": "Como tratar uma critica de integracao no maxPedido?",
+    "expected_behavior": "exact_answer",
+    "expected_intent": "troubleshooting",
+    "scope": {"level": "global"},
+    "source": "seed"
+  },
+  {
+    "id": "abstain-erp-especifico",
+    "question": "Qual menu do ERP XPTOS abre a tela secreta de integracao Z99?",
+    "expected_behavior": "no_answer",
+    "expected_intent": "configuration",
+    "scope": {"level": "global"},
+    "source": "seed"
+  },
+  {
+    "id": "abstain-campo-inexistente",
+    "question": "Qual coluna oculta da tabela mxsparametrovalor habilita modo turbo?",
+    "expected_behavior": "no_answer",
+    "expected_intent": "sql_lookup",
+    "scope": {"level": "global"},
+    "source": "seed"
+  }
+]

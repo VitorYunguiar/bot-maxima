@@ -6,14 +6,17 @@ Suporta busca hibrida (vetor + full-text) com Reciprocal Rank Fusion.
 
 import atexit
 import base64 as _base64
+import json
 import logging
 import math
 import random as _random
 import re
 import time as _time
+import uuid
 from collections import OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 import unicodedata
 
 import httpx
@@ -37,12 +40,18 @@ QUERY_ABBREVIATIONS = {
     "RCA": "representante comercial autonomo",
     "NF": "nota fiscal",
     "NFE": "nota fiscal eletronica",
+    "NFC": "nota fiscal de consumidor",
     "FPU": "F P U",
     "MIQ": "M I Q",
     "MQT": "M Q T",
+    "SQP": "sistema de quota e premio",
     "PDV": "ponto de venda",
     "SKU": "stock keeping unit",
     "WMS": "warehouse management system",
+    "ATUALIZID": "controle de sincronizacao atualizid",
+    "USAGRADE": "parametro usagrade de grade de produto",
+    "PARAMFILIAL": "rotina paramfilial 132",
+    "MXS": "maxima sistemas maxpedido",
 }
 
 INTENT_PRIORITY = [
@@ -66,6 +75,14 @@ INTENT_KEYWORDS = {
         "coluna",
         "query",
         "banco",
+        "mxsintegracaopedido",
+        "mxsintegracaopedido_log",
+        "mxshistoricocritica",
+        "mxsparametro",
+        "mxsparametrovalor",
+        "pcpedcfv",
+        "pclientfv",
+        "pcpedifv",
     ),
     "configuration": (
         "parametro",
@@ -76,6 +93,9 @@ INTENT_KEYWORDS = {
         "central",
         "perfil",
         "sincronizacao",
+        "usagrade",
+        "paramfilial",
+        "mxtabela",
     ),
     "integration": (
         "integracao",
@@ -86,6 +106,9 @@ INTENT_KEYWORDS = {
         "mixintegracaopedido",
         "mxshistoricopedc",
         "webhook",
+        "json_envio",
+        "json_retorno",
+        "status de pedido",
     ),
     "troubleshooting": (
         "erro",
@@ -97,6 +120,9 @@ INTENT_KEYWORDS = {
         "problema",
         "corrigir",
         "ajuda",
+        "critica",
+        "bloqueado",
+        "sincroniza",
     ),
     "process": (
         "pedido",
@@ -108,6 +134,9 @@ INTENT_KEYWORDS = {
         "timeline",
         "roteiro",
         "visita",
+        "pre-venda",
+        "check in",
+        "check out",
     ),
 }
 
@@ -125,6 +154,12 @@ QUERY_MODULE_HINTS = {
         "endpoint",
         "api",
         "erp",
+        "mxsintegracaopedido",
+        "mxsintegracaopedido_log",
+        "mxshistoricocritica",
+        "pcpedcfv",
+        "pclientfv",
+        "pcpedifv",
     ),
     "parametros_configuracao": (
         "parametro",
@@ -133,6 +168,10 @@ QUERY_MODULE_HINTS = {
         "central",
         "sincronizacao",
         "perfil",
+        "usagrade",
+        "paramfilial",
+        "mxsparametro",
+        "mxsparametrovalor",
     ),
     "pedidos_vendas": (
         "pedido",
@@ -142,6 +181,8 @@ QUERY_MODULE_HINTS = {
         "filial retira",
         "pre pedido",
         "timeline",
+        "check in",
+        "check out",
     ),
     "campanhas_descontos": (
         "campanha",
@@ -165,6 +206,8 @@ QUERY_MODULE_HINTS = {
         "inadimplente",
         "limite",
         "conta corrente",
+        "titulos abertos",
+        "mxstitulosabertos",
     ),
 }
 
@@ -207,9 +250,80 @@ INTENT_RESPONSE_INSTRUCTIONS = {
     ),
 }
 
+_CITATION_INLINE_RE = re.compile(r"\[fonte:\s*([^\]]+)\]", flags=re.IGNORECASE)
+_SOURCES_SECTION_RE = re.compile(r"^\s*fontes?\s*:", flags=re.IGNORECASE | re.MULTILINE)
+_FACTUAL_LINE_RE = re.compile(
+    r"(?:\b(select|update|insert|delete|from|join|where|tabela|campo|coluna|menu|tela|parametro|rotina|erro|codigo)\b|\d)",
+    flags=re.IGNORECASE,
+)
+_OPERATIONAL_QUERY_RE = re.compile(
+    r"\b(menu|tela|campo|parametro|sql|select|where|tabela|coluna|passo|rotina|erro|integracao)\b",
+    flags=re.IGNORECASE,
+)
+_REFORMULATION_CLARIFY_RE = re.compile(
+    r"^\s*(pode|poderia|consigo|precisa|precisamos|favor)\b.*\b(detalhar|informar|enviar|explicar)\b",
+    flags=re.IGNORECASE,
+)
+
 # ── Clientes ──────────────────────────────────────────────
 _gemini: genai.Client | None = None
 _http_client: httpx.Client | None = None
+
+
+class _GeneratedTextResponse:
+    """Compatibilidade para trechos que esperam objeto com atributo .text."""
+
+    def __init__(self, text: str):
+        self.text = text or ""
+
+
+def _active_llm_provider() -> str:
+    provider = (config.LLM_PROVIDER or "gemini").strip().lower()
+    return provider if provider in {"gemini", "openai"} else "gemini"
+
+
+def _active_embedding_provider() -> str:
+    provider = (config.EMBEDDING_PROVIDER or config.LLM_PROVIDER or "gemini").strip().lower()
+    return provider if provider in {"gemini", "openai"} else "gemini"
+
+
+def _resolve_text_model(requested_model: str | None, *, purpose: str = "general") -> str:
+    provider = _active_llm_provider()
+    requested = (requested_model or "").strip()
+    requested_lower = requested.lower()
+
+    if provider == "openai":
+        if requested and not requested_lower.startswith("gemini"):
+            return requested
+        if purpose == "reformulation":
+            return config.OPENAI_REFORMULATION_MODEL or config.OPENAI_MODEL
+        if purpose == "contextual":
+            return config.OPENAI_CONTEXTUAL_MODEL or config.OPENAI_REFORMULATION_MODEL or config.OPENAI_MODEL
+        return config.OPENAI_MODEL
+
+    # Provider Gemini: evita usar modelo OpenAI por engano.
+    if requested and not requested_lower.startswith("gpt-") and not requested_lower.startswith("o"):
+        return requested
+    if purpose == "reformulation":
+        return config.REFORMULATION_MODEL
+    if purpose == "contextual":
+        return config.CONTEXTUAL_RETRIEVAL_MODEL
+    return config.GEMINI_MODEL
+
+
+def _resolve_embedding_model() -> str:
+    provider = _active_embedding_provider()
+    configured = (config.EMBEDDING_MODEL or "").strip()
+    configured_lower = configured.lower()
+
+    if provider == "openai":
+        if configured and not configured_lower.startswith("gemini"):
+            return configured
+        return config.OPENAI_EMBEDDING_MODEL
+
+    if configured and not configured_lower.startswith("text-embedding-"):
+        return configured
+    return "gemini-embedding-001"
 
 
 def get_gemini() -> genai.Client:
@@ -219,6 +333,169 @@ def get_gemini() -> genai.Client:
     return _gemini
 
 
+def _openai_headers() -> dict[str, str]:
+    if not config.OPENAI_API_KEY:
+        raise EnvironmentError("OPENAI_API_KEY nao configurada.")
+    return {
+        "Authorization": f"Bearer {config.OPENAI_API_KEY}",
+        "Content-Type": "application/json",
+    }
+
+
+def _openai_url(path: str) -> str:
+    base = (config.OPENAI_BASE_URL or "https://api.openai.com/v1").rstrip("/")
+    clean_path = path.lstrip("/")
+    return f"{base}/{clean_path}"
+
+
+def _openai_extract_text(
+    message_content,
+    *,
+    message: dict | None = None,
+    raw_response: dict | None = None,
+) -> str:
+    def _extract_text_value(value) -> str:
+        if isinstance(value, str):
+            return value
+        if isinstance(value, dict):
+            candidate = value.get("value")
+            if isinstance(candidate, str):
+                return candidate
+            candidate = value.get("text")
+            if isinstance(candidate, str):
+                return candidate
+        return ""
+
+    def _extract_refusal_value(value) -> str:
+        if isinstance(value, str):
+            return value
+        if isinstance(value, dict):
+            candidate = value.get("value")
+            if isinstance(candidate, str):
+                return candidate
+            candidate = value.get("text")
+            if isinstance(candidate, str):
+                return candidate
+        return ""
+
+    if isinstance(message_content, str):
+        return message_content.strip()
+
+    if isinstance(message_content, dict):
+        nested = _extract_text_value(message_content.get("text"))
+        if nested:
+            return nested.strip()
+        refusal = _extract_refusal_value(message_content.get("refusal"))
+        if refusal:
+            return refusal.strip()
+
+    if isinstance(message_content, list):
+        parts: list[str] = []
+        for item in message_content:
+            if isinstance(item, str):
+                if item.strip():
+                    parts.append(item.strip())
+                continue
+            if not isinstance(item, dict):
+                continue
+            item_type = str(item.get("type") or "").lower()
+            if item_type in {"text", "output_text"}:
+                extracted = _extract_text_value(item.get("text"))
+                if extracted:
+                    parts.append(extracted.strip())
+            elif item_type == "refusal":
+                extracted = _extract_refusal_value(item.get("refusal"))
+                if extracted:
+                    parts.append(extracted.strip())
+        joined = "\n".join(part for part in parts if part).strip()
+        if joined:
+            return joined
+
+    if isinstance(message, dict):
+        refusal = _extract_refusal_value(message.get("refusal"))
+        if refusal:
+            return refusal.strip()
+        content_from_message = message.get("content")
+        if content_from_message is not message_content:
+            extracted = _openai_extract_text(content_from_message)
+            if extracted:
+                return extracted.strip()
+
+    if isinstance(raw_response, dict):
+        output_text = raw_response.get("output_text")
+        if isinstance(output_text, str) and output_text.strip():
+            return output_text.strip()
+        if isinstance(output_text, list):
+            joined = "\n".join(str(item).strip() for item in output_text if str(item).strip()).strip()
+            if joined:
+                return joined
+        choices = raw_response.get("choices") or []
+        if choices:
+            first_choice = choices[0] if isinstance(choices[0], dict) else {}
+            choice_text = first_choice.get("text")
+            if isinstance(choice_text, str) and choice_text.strip():
+                return choice_text.strip()
+
+    return ""
+
+
+def _openai_chat_generate(
+    *,
+    model: str,
+    messages: list[dict],
+    max_tokens: int = 2048,
+) -> _GeneratedTextResponse:
+    payload = {
+        "model": model,
+        "messages": messages,
+        "max_completion_tokens": max_tokens,
+    }
+    resp = _get_http_client().post(
+        _openai_url("/chat/completions"),
+        headers=_openai_headers(),
+        json=payload,
+        timeout=120,
+    )
+    if resp.status_code == 400 and "max_completion_tokens" in (resp.text or "").lower():
+        payload.pop("max_completion_tokens", None)
+        payload["max_tokens"] = max_tokens
+        resp = _get_http_client().post(
+            _openai_url("/chat/completions"),
+            headers=_openai_headers(),
+            json=payload,
+            timeout=120,
+        )
+    if resp.status_code >= 400:
+        logger.error(
+            "OpenAI CHAT erro %s (model=%s): %s",
+            resp.status_code,
+            model,
+            resp.text[:2000],
+        )
+    resp.raise_for_status()
+    data = resp.json()
+
+    choices = data.get("choices") or []
+    if not choices:
+        extracted = _openai_extract_text(None, raw_response=data)
+        return _GeneratedTextResponse(extracted)
+
+    first_choice = choices[0] if isinstance(choices[0], dict) else {}
+    message = first_choice.get("message") or {}
+    extracted = _openai_extract_text(
+        message.get("content"),
+        message=message,
+        raw_response=data,
+    )
+    if not extracted:
+        logger.warning(
+            "OpenAI CHAT retornou texto vazio (model=%s, finish_reason=%s).",
+            model,
+            first_choice.get("finish_reason"),
+        )
+    return _GeneratedTextResponse(extracted)
+
+
 def _gemini_generate(
     model: str,
     *,
@@ -226,12 +503,43 @@ def _gemini_generate(
     contents,
     max_tokens: int = 2048,
 ):
-    """Wrapper para chamadas ao Gemini que padroniza config."""
+    """
+    Wrapper retrocompativel de geracao:
+    - provider=gemini -> Gemini SDK
+    - provider=openai -> Chat Completions
+    """
+    purpose = "general"
+    if model == config.REFORMULATION_MODEL:
+        purpose = "reformulation"
+    elif model == config.CONTEXTUAL_RETRIEVAL_MODEL:
+        purpose = "contextual"
+
+    provider = _active_llm_provider()
+    if provider == "openai":
+        resolved_model = _resolve_text_model(
+            model,
+            purpose=purpose,
+        )
+        user_content = contents if isinstance(contents, str) else str(contents)
+        messages: list[dict] = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": user_content})
+        return _openai_chat_generate(
+            model=resolved_model,
+            messages=messages,
+            max_tokens=max_tokens,
+        )
+
+    resolved_model = _resolve_text_model(
+        model,
+        purpose=purpose,
+    )
     cfg = _gtypes.GenerateContentConfig(max_output_tokens=max_tokens)
     if system:
         cfg.system_instruction = system
     response = get_gemini().models.generate_content(
-        model=model,
+        model=resolved_model,
         contents=contents,
         config=cfg,
     )
@@ -467,6 +775,221 @@ def _safe_similarity(value: float) -> float:
     return parsed
 
 
+def _new_query_id() -> str:
+    return str(uuid.uuid4())
+
+
+def _normalize_source_name(value: str) -> str:
+    return (value or "").strip().strip("`* ").lower()
+
+
+def _extract_cited_sources(answer: str) -> set[str]:
+    cited: set[str] = set()
+
+    for match in _CITATION_INLINE_RE.findall(answer or ""):
+        for source in re.split(r"[;,|]", match):
+            source = _normalize_source_name(source)
+            if source:
+                cited.add(source)
+
+    in_sources_section = False
+    for raw_line in (answer or "").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if _SOURCES_SECTION_RE.match(line):
+            in_sources_section = True
+            continue
+        if in_sources_section:
+            if line.startswith("-"):
+                source = _normalize_source_name(line.lstrip("- ").split("(", 1)[0])
+                if source:
+                    cited.add(source)
+                continue
+            # encerra secao ao bater em outro cabecalho/paragraph
+            if re.match(r"^[A-Za-z].*:$", line):
+                in_sources_section = False
+                continue
+
+    return cited
+
+
+def _strip_sources_section(answer: str) -> str:
+    text = (answer or "").strip()
+    if not text:
+        return ""
+    match = _SOURCES_SECTION_RE.search(text)
+    if not match:
+        return text
+    return text[:match.start()].rstrip()
+
+
+def _enforce_sources_section_only(
+    answer: str,
+    *,
+    allowed_sources: set[str] | None,
+    source_display_map: dict[str, str] | None = None,
+) -> tuple[str, set[str]]:
+    text = (answer or "").strip()
+    if not text:
+        return "", set()
+    if text.startswith(config.NO_ANSWER_PHRASE):
+        return text, set()
+
+    body = _strip_sources_section(text)
+    body = _CITATION_INLINE_RE.sub("", body)
+    body = re.sub(r"[ \t]+(\n)", r"\1", body)
+    body = re.sub(r"[ \t]{2,}", " ", body)
+    body = re.sub(r"\n{3,}", "\n\n", body).strip()
+
+    cited_sources = _extract_cited_sources(text)
+    if allowed_sources:
+        cited_sources = {source for source in cited_sources if source in allowed_sources}
+    if not cited_sources:
+        return body, set()
+
+    sources_lines: list[str] = []
+    for source in sorted(cited_sources):
+        display_name = (source_display_map or {}).get(source, source)
+        sources_lines.append(f"- {display_name}")
+    sources_block = "Fontes:\n" + "\n".join(sources_lines)
+
+    if body:
+        return f"{body}\n\n{sources_block}", cited_sources
+    return sources_block, cited_sources
+
+
+def _line_has_citation(line: str) -> bool:
+    return bool(_CITATION_INLINE_RE.search(line))
+
+
+def _is_operational_specific_query(question: str) -> bool:
+    return bool(_OPERATIONAL_QUERY_RE.search(question or ""))
+
+
+def _looks_like_clarifying_request(text: str) -> bool:
+    normalized = normalize_text(text or "")
+    if not normalized:
+        return False
+    return bool(_REFORMULATION_CLARIFY_RE.search(text or "")) or normalized.startswith(
+        "pode detalhar"
+    )
+
+
+def _build_clarifying_question(question: str) -> str:
+    normalized = normalize_text(question or "")
+    if any(token in normalized for token in ("sql", "tabela", "campo", "coluna", "select")):
+        return "Pode informar o nome da tabela/campo ou um trecho da query que voce espera consultar?"
+    if any(token in normalized for token in ("erro", "critica", "falha", "codigo")):
+        return "Pode enviar a mensagem de erro completa e, se possivel, um print da tela?"
+    if any(token in normalized for token in ("parametro", "configuracao", "menu", "tela")):
+        return "Pode informar o nome exato do parametro/tela e em qual modulo voce esta?"
+    return config.ABSTAIN_CLARIFYING_QUESTION
+
+
+def _build_abstain_response(question: str) -> str:
+    return (
+        f"{config.NO_ANSWER_PHRASE}\n\n"
+        f"Pergunta de esclarecimento: {_build_clarifying_question(question)}"
+    )
+
+
+def _validate_grounded_answer(
+    *,
+    answer: str,
+    allowed_sources: set[str],
+    question: str,
+    require_sources_section: bool,
+) -> tuple[bool, list[str], set[str]]:
+    if not answer:
+        return False, ["Resposta vazia."], set()
+    if normalize_text(answer).startswith("nao foi possivel extrair uma resposta do modelo"):
+        return False, ["Resposta vazia."], set()
+
+    if answer.strip().startswith(config.NO_ANSWER_PHRASE):
+        return True, [], set()
+
+    errors: list[str] = []
+    cited_sources = _extract_cited_sources(answer)
+
+    if require_sources_section and not _SOURCES_SECTION_RE.search(answer):
+        errors.append("Resposta sem secao 'Fontes:'.")
+
+    if not cited_sources:
+        errors.append("Resposta sem citacoes de fonte.")
+
+    unknown_sources = {s for s in cited_sources if s not in allowed_sources}
+    if unknown_sources:
+        errors.append(f"Fontes nao recuperadas no contexto: {', '.join(sorted(unknown_sources))}.")
+
+    if _is_operational_specific_query(question) and not cited_sources:
+        errors.append("Pergunta operacional exige fonte explicita.")
+
+    return len(errors) == 0, errors, cited_sources
+
+
+def _is_grounding_error_critical(errors: list[str]) -> bool:
+    """Define se falha de grounding exige abstencao obrigatoria."""
+    if not errors:
+        return False
+
+    for error in errors:
+        normalized = normalize_text(error or "")
+        if "afirmacoes factuais sem citacao inline" in normalized:
+            continue
+        if "resposta vazia" in normalized:
+            return True
+        if "fontes nao recuperadas no contexto" in normalized:
+            return True
+        if "pergunta operacional exige fonte explicita" in normalized:
+            return True
+        return True
+    return False
+
+
+def _summarize_chunks_for_trace(chunks: list[dict]) -> dict[str, Any]:
+    safe_chunks = chunks or []
+    top_similarity = max(
+        (_safe_similarity(chunk.get("similarity", 0.0)) for chunk in safe_chunks),
+        default=0.0,
+    )
+    filenames = [
+        str(chunk.get("filename"))
+        for chunk in safe_chunks
+        if chunk.get("filename")
+    ]
+    return {
+        "top_similarity": top_similarity,
+        "retrieved_chunk_count": len(safe_chunks),
+        "retrieved_sources": sorted(set(filenames)),
+    }
+
+
+def _log_ask_trace(trace: dict[str, Any]) -> None:
+    try:
+        logger.info("ASK_TRACE %s", json.dumps(trace, ensure_ascii=False))
+    except Exception:
+        logger.info("ASK_TRACE %s", trace)
+
+
+def get_model_config() -> dict[str, str]:
+    """Resumo do provider/modelos ativos para exibicao e diagnostico."""
+    return {
+        "llm_provider": _active_llm_provider(),
+        "embedding_provider": _active_embedding_provider(),
+        "generation_model": _resolve_text_model(config.GEMINI_MODEL, purpose="general"),
+        "reformulation_model": _resolve_text_model(
+            config.REFORMULATION_MODEL,
+            purpose="reformulation",
+        ),
+        "contextual_model": _resolve_text_model(
+            config.CONTEXTUAL_RETRIEVAL_MODEL,
+            purpose="contextual",
+        ),
+        "embedding_model": _resolve_embedding_model(),
+    }
+
+
 def _fallback_log_knowledge_gap(query: str, max_similarity: float, platform: str) -> None:
     normalized_query = query[:500]
     similarity = _safe_similarity(max_similarity)
@@ -542,13 +1065,57 @@ def _normalize_embedding(values: list[float]) -> list[float]:
     return values
 
 
+def _openai_create_embeddings(contents: list[str], model: str) -> list[list[float]]:
+    payload: dict[str, Any] = {
+        "model": model,
+        "input": contents,
+    }
+    if model.startswith("text-embedding-3"):
+        payload["dimensions"] = config.EMBEDDING_DIMENSIONS
+
+    resp = _get_http_client().post(
+        _openai_url("/embeddings"),
+        headers=_openai_headers(),
+        json=payload,
+        timeout=120,
+    )
+    if resp.status_code >= 400:
+        logger.error(
+            "OpenAI EMBEDDINGS erro %s (model=%s): %s",
+            resp.status_code,
+            model,
+            resp.text[:2000],
+        )
+    resp.raise_for_status()
+    data = resp.json()
+
+    rows = data.get("data") or []
+    rows = sorted(rows, key=lambda row: int(row.get("index", 0)))
+    vectors = []
+    for row in rows:
+        embedding = row.get("embedding") or []
+        vectors.append(_normalize_embedding([float(v) for v in embedding]))
+    return vectors
+
+
 def create_embeddings(contents: list[str], task_type: str = "RETRIEVAL_DOCUMENT") -> list[list[float]]:
     if not contents:
         return []
 
+    provider = _active_embedding_provider()
+    model = _resolve_embedding_model()
+
+    if provider == "openai":
+        vectors = _openai_create_embeddings(contents, model)
+        if len(vectors) != len(contents):
+            raise ValueError(
+                f"Quantidade de embeddings inconsistente: esperado {len(contents)}, obtido {len(vectors)}."
+            )
+        return vectors
+
     payload = contents if len(contents) > 1 else contents[0]
     result = get_gemini().models.embed_content(
-        model=config.EMBEDDING_MODEL,
+        model=model,
         contents=payload,
         config={
             "task_type": task_type,
@@ -752,6 +1319,9 @@ def _load_business_rules_context() -> str:
         return ""
 
     max_chars = max(500, int(config.BUSINESS_RULES_MAX_CHARS))
+    if _active_llm_provider() == "openai":
+        # Reduz custo/latencia de prompts longos no OpenAI.
+        max_chars = min(max_chars, 3000)
     if len(text) > max_chars:
         logger.warning(
             "Arquivo de regras de negocio excede limite (%s chars). Truncando para %s.",
@@ -964,7 +1534,7 @@ def search_similar_chunks(
     final_result = result or []
 
     # P0.3: Se a busca filtrada retornou poucos resultados, complementar sem filtro de modulo
-    if module_filter and len(final_result) < max(1, max_results // 2):
+    if module_filter and len(final_result) < max(1, max_results // 3):
         logger.info(
             "Busca filtrada retornou poucos resultados (%d/%d); "
             "complementando com busca sem filtro de modulo.",
@@ -1003,6 +1573,129 @@ def search_similar_chunks(
             logger.warning("Busca complementar sem filtro de modulo falhou: %s", e)
 
     return final_result
+
+
+def _normalize_scope(scope: dict | None) -> dict[str, str]:
+    if not isinstance(scope, dict):
+        return {}
+    normalized: dict[str, str] = {}
+    for key in ("level", "tenant", "erp", "version"):
+        value = scope.get(key)
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text:
+            normalized[key] = text
+    return normalized
+
+
+def _search_feedback_memory_chunks(
+    query: str,
+    *,
+    scope: dict | None = None,
+    scope_level: str | None = None,
+    max_results: int | None = None,
+    threshold: float | None = None,
+) -> list[dict]:
+    if max_results is None:
+        max_results = config.RAG_FEEDBACK_TOP_K
+    if threshold is None:
+        threshold = config.RAG_FEEDBACK_MIN_SIMILARITY
+
+    query_for_embedding, _ = _preprocess_query(query)
+    query_embedding = _get_cached_query_embedding(query_for_embedding)
+    normalized_scope = _normalize_scope(scope)
+
+    rpc_params: dict[str, Any] = {
+        "query_embedding": embedding_to_pgvector(query_embedding),
+        "match_count": max_results,
+        "match_threshold": threshold,
+    }
+    if scope_level:
+        rpc_params["scope_level"] = scope_level
+    if normalized_scope.get("tenant"):
+        rpc_params["scope_tenant"] = normalized_scope["tenant"]
+    if normalized_scope.get("erp"):
+        rpc_params["scope_erp"] = normalized_scope["erp"]
+    if normalized_scope.get("version"):
+        rpc_params["scope_version"] = normalized_scope["version"]
+
+    try:
+        rows = supabase_rpc("search_feedback_chunks", rpc_params)
+    except Exception as e:
+        if _is_missing_rpc_function(e, "search_feedback_chunks"):
+            logger.warning(
+                "RPC search_feedback_chunks nao encontrada; memoria de feedback desativada."
+            )
+            return []
+        logger.warning("Erro ao buscar feedback chunks: %s", e)
+        return []
+
+    source_kind = "feedback_global" if scope_level == "global" else "feedback_scoped"
+    bonus = 0.35 if source_kind == "feedback_scoped" else 0.25
+    priority = 40 if source_kind == "feedback_scoped" else 32
+    formatted: list[dict] = []
+    for row in rows or []:
+        feedback_item_id = str(row.get("feedback_item_id") or "")
+        similarity = min(1.0, _safe_similarity(row.get("similarity", 0.0)) + bonus)
+        formatted.append(
+            {
+                "id": row.get("id"),
+                "document_id": f"feedback:{feedback_item_id or row.get('id')}",
+                "content": row.get("content") or "",
+                "chunk_index": 0,
+                "filename": f"feedback_{feedback_item_id or row.get('id')}.md",
+                "similarity": similarity,
+                "metadata": {
+                    "doc_priority": priority,
+                    "source_kind": source_kind,
+                    "feedback_item_id": feedback_item_id,
+                    "scope": row.get("scope") if isinstance(row.get("scope"), dict) else {},
+                },
+            }
+        )
+    return formatted
+
+
+def _dedupe_chunks(chunks: list[dict]) -> list[dict]:
+    deduped: list[dict] = []
+    seen: set[str] = set()
+    for chunk in chunks:
+        chunk_id = chunk.get("id")
+        key = str(chunk_id) if chunk_id is not None else (
+            f"{chunk.get('filename','')}::{_chunk_index_value(chunk)}::{hash(chunk.get('content',''))}"
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(chunk)
+    return deduped
+
+
+def retrieve_chunks_with_feedback(
+    query: str,
+    *,
+    query_plan: dict | None,
+    scope: dict | None,
+) -> tuple[list[dict], list[dict], list[dict]]:
+    scope = _normalize_scope(scope)
+    scoped_feedback = []
+    if scope:
+        scoped_feedback = _search_feedback_memory_chunks(
+            query,
+            scope=scope,
+            scope_level=scope.get("level") or "tenant",
+        )
+
+    global_feedback = _search_feedback_memory_chunks(
+        query,
+        scope={},
+        scope_level="global",
+    )
+
+    kb_chunks = search_similar_chunks(query, query_plan=query_plan)
+    merged = _dedupe_chunks(scoped_feedback + global_feedback + kb_chunks)
+    return merged, scoped_feedback, kb_chunks
 
 
 def _chunk_index_value(chunk: dict) -> int:
@@ -1082,20 +1775,31 @@ def build_context(chunks: list[dict]) -> str:
 
         # P1.3: Boost de prioridade do documento
         doc_priority = 5  # default
+        source_kind = "kb"
         for c in sorted_doc_chunks:
             meta = c.get("metadata") or {}
-            if isinstance(meta, dict):
-                p = meta.get("doc_priority")
-                if p is not None:
-                    try:
-                        doc_priority = int(p)
-                    except (TypeError, ValueError):
-                        pass
+            if not isinstance(meta, dict):
+                continue
+            p = meta.get("doc_priority")
+            sk = str(meta.get("source_kind") or "").strip().lower()
+            if sk:
+                source_kind = sk
+            if p is not None:
+                try:
+                    doc_priority = int(p)
+                except (TypeError, ValueError):
+                    pass
+                if sk:
                     break
 
-        # Boost sutil: priority 10 → +10%, priority 3 → -4%
+        # Boost com precedencia explicita para memoria de correcoes.
         priority_boost = 1.0 + (doc_priority - 5) * 0.02
-        sort_similarity = max_similarity * priority_boost
+        precedence_bonus = 0.0
+        if source_kind == "feedback_scoped":
+            precedence_bonus = 0.8
+        elif source_kind == "feedback_global":
+            precedence_bonus = 0.4
+        sort_similarity = (max_similarity * priority_boost) + precedence_bonus
 
         docs_for_context.append(
             {
@@ -1131,8 +1835,8 @@ def _reformulate_query_with_history(
     if not conversation_history:
         return question
 
-    # Perguntas com 6+ palavras provavelmente ja sao autocontidas
-    if len(question.split()) >= 6:
+    # Perguntas com 5+ palavras provavelmente ja sao autocontidas
+    if len(question.split()) >= 5:
         return question
 
     # Usar apenas os ultimos 2 pares (4 mensagens)
@@ -1161,6 +1865,12 @@ def _reformulate_query_with_history(
         )
         reformulated = response.text.strip()
         if reformulated and len(reformulated) < 500:
+            if _looks_like_clarifying_request(reformulated):
+                logger.info(
+                    "Query reformulada descartada por virar pedido de esclarecimento: '%s'",
+                    reformulated[:80],
+                )
+                return question
             logger.info(
                 "Query reformulada: '%s' -> '%s'",
                 question[:60],
@@ -1187,8 +1897,12 @@ def _rerank_chunks_with_llm(
 
     # Pular re-ranking se o top chunk ja tem similaridade alta — busca ja acertou
     top_sim = _safe_similarity(chunks[0].get("similarity", 0))
-    if top_sim >= 0.82:
-        logger.info("Re-ranking LLM pulado: top chunk similarity=%.3f >= 0.82", top_sim)
+    if top_sim >= config.RERANKER_SKIP_THRESHOLD:
+        logger.info(
+            "Re-ranking LLM pulado: top chunk similarity=%.3f >= %.2f",
+            top_sim,
+            config.RERANKER_SKIP_THRESHOLD,
+        )
         return chunks
 
     if top_n is None:
@@ -1198,7 +1912,7 @@ def _rerank_chunks_with_llm(
     candidates = chunks[:10]
     chunk_summaries = []
     for i, chunk in enumerate(candidates):
-        content = (chunk.get("content") or "")[:250]
+        content = (chunk.get("content") or "")[:400].rsplit(" ", 1)[0]
         filename = chunk.get("filename", "")
         chunk_summaries.append(f"[{i}] ({filename}) {content}")
 
@@ -1209,9 +1923,11 @@ def _rerank_chunks_with_llm(
             model=config.REFORMULATION_MODEL,
             max_tokens=200,
             system=(
-                "Voce e um ranqueador de documentos tecnicos. "
-                "Dada uma pergunta e trechos de documentos, retorne os indices dos trechos "
-                "mais relevantes para responder a pergunta, do mais relevante ao menos. "
+                "Voce e um ranqueador de documentacao tecnica do ERP maxPedido (Maxima Sistemas). "
+                "Dada uma pergunta de suporte N1 e trechos da base de conhecimento, retorne os indices "
+                "dos trechos mais relevantes para responder a pergunta, do mais relevante ao menos. "
+                "Prefira trechos com passos especificos, consultas SQL completas, nomes de "
+                "campo/tela/parametro e resolucoes de erro — em vez de trechos introdutorios ou genericos. "
                 "Retorne APENAS os numeros separados por virgula. Exemplo: 3,0,7,1"
             ),
             contents=f"Pergunta: {query}\n\nTrechos:\n{summaries_text}",
@@ -1246,109 +1962,12 @@ def _rerank_chunks_with_llm(
     return chunks
 
 
-# -- Resposta do Claude ---------------------------------------------------------
-def ask(
+# -- Resposta do modelo ---------------------------------------------------------
+def _compose_gemini_contents(
     question: str,
-    conversation_history: list[dict] = None,
-    images: list[dict] = None,
-) -> tuple[str, list[dict]]:
-    """
-    Responde uma pergunta usando RAG + Gemini.
-
-    images: lista de dicts com chaves 'data' (bytes base64) e 'media_type' (ex: 'image/png').
-    """
-    # P0.1: Reformular query com historico para follow-ups
-    search_query = _reformulate_query_with_history(question, conversation_history)
-
-    # ── FULL CONTEXT MODE (estilo Claude Projects) ───────────────────
-    if config.FULL_CONTEXT_ENABLED:
-        full_context = _load_full_context_docs()
-        chunks = []  # sem RAG no modo full context
-
-        system = config.SYSTEM_PROMPT
-        if full_context:
-            system += (
-                "\n\n<knowledge_base>\n"
-                "Abaixo esta a BASE DE CONHECIMENTO COMPLETA da Maxima Sistemas. "
-                "Voce tem acesso a TODOS os documentos. Use-os para responder de forma "
-                "completa, detalhada e precisa. Faca conexoes entre documentos quando relevante.\n\n"
-                f"{full_context}\n"
-                "</knowledge_base>"
-            )
-        else:
-            system += (
-                "\n\nA base de conhecimento nao foi carregada. "
-                "Responda: \"Base de conhecimento indisponivel no momento. Tente novamente.\""
-            )
-    else:
-        # ── RAG MODE (pipeline original) ──────────────────────────────
-        query_plan = _classify_query_intent(search_query)
-        logger.info(
-            "Roteamento da pergunta: intent=%s modules=%s doc_types=%s",
-            query_plan.get("intent", "general"),
-            query_plan.get("modules", []),
-            query_plan.get("doc_types", []),
-        )
-        chunks = search_similar_chunks(search_query, query_plan=query_plan)
-
-        # P1.1: Re-ranking com LLM
-        chunks = _rerank_chunks_with_llm(search_query, chunks)
-
-        context = build_context(chunks)
-        business_rules = _load_business_rules_context()
-        intent_instruction = _intent_response_instruction(query_plan)
-
-        system = config.SYSTEM_PROMPT
-        if business_rules:
-            system += (
-                "\n\n<business_rules>\n"
-                "Abaixo esta o contexto FIXO de regras de negocio do maxPedido. "
-                "Use essas regras como referencia canonica junto com os documentos recuperados.\n\n"
-                f"{business_rules}\n"
-                "</business_rules>"
-            )
-
-        if query_plan:
-            routed_modules = query_plan.get("modules") or []
-            if routed_modules:
-                system += (
-                    "\n\n<routing>\n"
-                    f"Pergunta roteada para os modulos: {', '.join(routed_modules)}.\n"
-                    "Priorize contexto e exemplos desses modulos quando houver conflito de sinais."
-                    "\n</routing>"
-                )
-
-        if intent_instruction:
-            system += (
-                "\n\n<response_mode>\n"
-                f"{intent_instruction}\n"
-                "</response_mode>"
-            )
-
-        if context:
-            system += (
-                "\n\n<context>\n"
-                "Abaixo estao os trechos relevantes dos documentos da base de conhecimento. "
-                "Eles estao ORDENADOS DO MAIS RELEVANTE PARA O MENOS RELEVANTE. "
-                "O atributo 'relevance' indica a similaridade com a pergunta (0-1). "
-                "Priorize informacoes dos documentos com maior relevance. "
-                "Use APENAS essas informacoes para responder.\n\n"
-                f"{context}\n"
-                "</context>"
-            )
-        else:
-            system += (
-                "\n\nNenhum documento recuperado por busca semantica foi encontrado para esta pergunta. "
-                "Se o bloco business_rules acima for suficiente, responda com base nele. "
-                "Caso nao haja informacao suficiente, responda exatamente:\n"
-                "\"Nao encontrei essa informacao na base de conhecimento.\n\n"
-                "Sugestoes:\n"
-                "- Tente reformular a pergunta com termos diferentes\n"
-                "- Use palavras-chave mais especificas (ex: nome do campo, tela ou erro)\n"
-                "- Se precisar, abra um chamado ou consulte a equipe N2\""
-            )
-
-    # Montar conteudo da mensagem (texto + imagens) no formato Gemini
+    conversation_history: list[dict] | None,
+    images: list[dict] | None,
+) -> list[_gtypes.Content]:
     user_parts: list[_gtypes.Part] = []
     if images:
         for img in images:
@@ -1360,43 +1979,513 @@ def ask(
             ))
     user_parts.append(_gtypes.Part(text=question))
 
-    # Converter historico para formato Gemini
     gemini_contents: list[_gtypes.Content] = []
     if conversation_history:
         gemini_contents = _anthropic_msgs_to_gemini(conversation_history)
     gemini_contents.append(_gtypes.Content(role="user", parts=user_parts))
+    return gemini_contents
 
+
+def _to_openai_content(content) -> str | list[dict]:
+    if isinstance(content, str):
+        return content
+
+    parts: list[dict] = []
+    if isinstance(content, list):
+        for block in content:
+            if isinstance(block, str):
+                text = block.strip()
+                if text:
+                    parts.append({"type": "text", "text": text})
+                continue
+            if not isinstance(block, dict):
+                continue
+            block_type = str(block.get("type") or "").lower()
+            if block_type == "text" and block.get("text"):
+                parts.append({"type": "text", "text": str(block["text"])})
+            elif block_type == "image":
+                src = block.get("source") or {}
+                media_type = str(src.get("media_type") or "image/png")
+                data = str(src.get("data") or "")
+                if data:
+                    parts.append(
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:{media_type};base64,{data}"},
+                        }
+                    )
+
+    if not parts:
+        return str(content)
+    if len(parts) == 1 and parts[0]["type"] == "text":
+        return str(parts[0]["text"])
+    return parts
+
+
+def _compose_openai_messages(
+    *,
+    question: str,
+    system: str,
+    conversation_history: list[dict] | None,
+    images: list[dict] | None,
+) -> list[dict]:
+    messages: list[dict] = []
+    if system:
+        messages.append({"role": "system", "content": system})
+
+    for msg in conversation_history or []:
+        role_raw = str(msg.get("role") or "user").lower()
+        role = "assistant" if role_raw == "assistant" else "user"
+        messages.append({"role": role, "content": _to_openai_content(msg.get("content", ""))})
+
+    user_parts: list[dict] = [{"type": "text", "text": question}]
+    for img in images or []:
+        media_type = str(img.get("media_type") or "image/png")
+        data = str(img.get("data") or "")
+        if not data:
+            continue
+        user_parts.append(
+            {
+                "type": "image_url",
+                "image_url": {"url": f"data:{media_type};base64,{data}"},
+            }
+        )
+    user_content: str | list[dict]
+    if len(user_parts) == 1:
+        user_content = user_parts[0]["text"]
+    else:
+        user_content = user_parts
+    messages.append({"role": "user", "content": user_content})
+    return messages
+
+
+def _ask_model(
+    *,
+    question: str,
+    system: str,
+    conversation_history: list[dict] | None,
+    images: list[dict] | None,
+    max_tokens_override: int | None = None,
+) -> str:
+    provider = _active_llm_provider()
+    requested_max_tokens = int(max_tokens_override or config.ASK_MAX_TOKENS)
     try:
+        if provider == "openai":
+            # Em prompts longos, limites muito altos aumentam bastante a latencia no OpenAI.
+            max_tokens = max(256, min(requested_max_tokens, 4096))
+            prompt_chars = len(question or "") + len(system or "")
+            for msg in conversation_history or []:
+                prompt_chars += len(str(msg.get("content", "")))
+            messages = _compose_openai_messages(
+                question=question,
+                system=system,
+                conversation_history=conversation_history,
+                images=images,
+            )
+            primary_model = _resolve_text_model(config.OPENAI_MODEL, purpose="general")
+            if prompt_chars > 12000:
+                primary_model = _resolve_text_model(config.OPENAI_CONTEXTUAL_MODEL, purpose="contextual")
+            response = _openai_chat_generate(
+                model=primary_model,
+                messages=messages,
+                max_tokens=max_tokens,
+            )
+            if response.text:
+                return response.text
+
+            fallback_model = _resolve_text_model(config.OPENAI_CONTEXTUAL_MODEL, purpose="contextual")
+            if fallback_model != primary_model:
+                logger.warning(
+                    "OpenAI retornou resposta vazia no modelo %s; tentando fallback %s.",
+                    primary_model,
+                    fallback_model,
+                )
+                fallback_response = _openai_chat_generate(
+                    model=fallback_model,
+                    messages=messages,
+                    max_tokens=max(256, min(max_tokens, 2048)),
+                )
+                if fallback_response.text:
+                    return fallback_response.text
+
+            logger.warning("Resposta inesperada do OpenAI Chat Completions (texto vazio apos fallback).")
+            return "Nao foi possivel extrair uma resposta do modelo."
+
+        max_tokens = max(128, requested_max_tokens)
+        gemini_contents = _compose_gemini_contents(question, conversation_history, images)
         response = _gemini_generate(
             model=config.GEMINI_MODEL,
-            max_tokens=config.ASK_MAX_TOKENS,
+            max_tokens=max_tokens,
             system=system,
             contents=gemini_contents,
         )
         if response.text:
-            answer = response.text
-        else:
-            logger.warning("Resposta inesperada do Gemini: %s", response)
-            answer = "Nao foi possivel extrair uma resposta do modelo."
+            return response.text
+        logger.warning("Resposta inesperada do Gemini: %s", response)
+        return "Nao foi possivel extrair uma resposta do modelo."
     except Exception as e:
         error_str = str(e).lower()
+        provider_label = "OpenAI" if provider == "openai" else "Gemini"
         if "429" in str(e) or "resource_exhausted" in error_str or "rate" in error_str:
-            logger.error("Rate limit do Gemini atingido: %s", e)
-            answer = "O servico esta sobrecarregado no momento. Tente novamente em alguns segundos."
-        elif "401" in str(e) or "403" in str(e) or "api_key" in error_str or "permission" in error_str:
-            logger.error("Erro de autenticacao com Gemini: %s", e)
-            answer = "Erro de configuracao do bot. Contate o administrador."
-        elif "timeout" in error_str:
-            logger.error("Timeout na chamada ao Gemini: %s", e)
-            answer = "A consulta demorou demais. Tente reformular com uma pergunta mais curta."
-        elif "connect" in error_str:
-            logger.error("Erro de conexao com Gemini: %s", e)
-            answer = "Nao foi possivel conectar ao servico. Tente novamente em instantes."
-        else:
-            logger.error("Erro ao chamar Gemini: %s", e, exc_info=True)
-            answer = "Ocorreu um erro inesperado. Tente novamente."
+            logger.error("Rate limit do %s atingido: %s", provider_label, e)
+            return "O servico esta sobrecarregado no momento. Tente novamente em alguns segundos."
+        if "401" in str(e) or "403" in str(e) or "api_key" in error_str or "permission" in error_str:
+            logger.error("Erro de autenticacao com %s: %s", provider_label, e)
+            return "Erro de configuracao do bot. Contate o administrador."
+        if "timeout" in error_str:
+            logger.error("Timeout na chamada ao %s: %s", provider_label, e)
+            return "A consulta demorou demais. Tente reformular com uma pergunta mais curta."
+        if "connect" in error_str:
+            logger.error("Erro de conexao com %s: %s", provider_label, e)
+            return "Nao foi possivel conectar ao servico. Tente novamente em instantes."
+        logger.error("Erro ao chamar %s: %s", provider_label, e, exc_info=True)
+        return "Ocorreu um erro inesperado. Tente novamente."
 
-    return answer, chunks
+
+def _should_strict_abstain(question: str, chunks: list[dict]) -> tuple[bool, str | None]:
+    if not config.RAG_STRICT_ABSTAIN:
+        return False, None
+    if not chunks:
+        return True, "no_chunks"
+
+    top_similarity = max((_safe_similarity(c.get("similarity", 0.0)) for c in chunks), default=0.0)
+    if len(chunks) < config.RAG_MIN_RETRIEVED_CHUNKS:
+        return True, "few_chunks"
+    if top_similarity < config.RAG_MIN_STRONG_SIMILARITY:
+        return True, "low_similarity"
+    if _is_operational_specific_query(question):
+        required = min(1.0, config.RAG_MIN_STRONG_SIMILARITY + config.RAG_OPERATIONAL_SIMILARITY_MARGIN)
+        if top_similarity < required:
+            return True, "low_similarity_operational"
+    return False, None
+
+
+def _apply_grounding_regeneration(
+    *,
+    answer: str,
+    question: str,
+    system: str,
+    conversation_history: list[dict] | None,
+    images: list[dict] | None,
+    allowed_sources: set[str],
+    source_display_map: dict[str, str] | None = None,
+) -> tuple[str, list[str], set[str], int]:
+    normalized_answer, normalized_cited = _enforce_sources_section_only(
+        answer,
+        allowed_sources=allowed_sources,
+        source_display_map=source_display_map,
+    )
+
+    if not config.RAG_ENABLE_GROUNDING_VALIDATION:
+        cited = normalized_cited or _extract_cited_sources(normalized_answer)
+        return normalized_answer, [], cited, 0
+
+    valid, errors, cited_sources = _validate_grounded_answer(
+        answer=normalized_answer,
+        allowed_sources=allowed_sources,
+        question=question,
+        require_sources_section=config.RAG_REQUIRE_SOURCES_SECTION,
+    )
+    if valid:
+        return normalized_answer, [], cited_sources, 0
+    if not _is_grounding_error_critical(errors):
+        logger.info(
+            "Grounding inicial com erros nao-criticos; mantendo resposta sem regeneracao: %s",
+            " | ".join(errors),
+        )
+        return normalized_answer, errors, cited_sources, 0
+
+    max_regen_attempts = max(0, int(config.RAG_MAX_REGEN_ATTEMPTS))
+    regeneration_attempts = 0
+    revised_answer = normalized_answer
+    revised_errors = errors
+    revised_citations = cited_sources
+    for _ in range(max_regen_attempts):
+        regeneration_attempts += 1
+        revision_prompt = (
+            f"{question}\n\n"
+            "Sua resposta anterior falhou na validacao de grounding.\n"
+            f"Erros detectados: {' | '.join(errors)}\n"
+            f"Fontes permitidas: {', '.join(sorted(allowed_sources)) or '(nenhuma)'}\n\n"
+            "Reescreva seguindo estritamente:\n"
+            "1) Use somente informacoes sustentadas pelo contexto.\n"
+            "2) Nao inclua [fonte: ...] no meio dos paragrafos.\n"
+            "3) Inclua secao final obrigatoria 'Fontes:' listando apenas arquivos usados.\n"
+        )
+        revised_answer = _ask_model(
+            question=revision_prompt,
+            system=system,
+            conversation_history=None,
+            images=None,
+            max_tokens_override=1024,
+        )
+        revised_answer, revised_citations = _enforce_sources_section_only(
+            revised_answer,
+            allowed_sources=allowed_sources,
+            source_display_map=source_display_map,
+        )
+        valid, revised_errors, revised_citations = _validate_grounded_answer(
+            answer=revised_answer,
+            allowed_sources=allowed_sources,
+            question=question,
+            require_sources_section=config.RAG_REQUIRE_SOURCES_SECTION,
+        )
+        if valid:
+            return revised_answer, [], revised_citations, regeneration_attempts
+
+    if _is_grounding_error_critical(revised_errors):
+        return _build_abstain_response(question), revised_errors, revised_citations, regeneration_attempts
+
+    logger.info(
+        "Grounding com erros nao-criticos; mantendo resposta sem abstencao: %s",
+        " | ".join(revised_errors),
+    )
+    best_answer = (revised_answer or "").strip() or (answer or "").strip()
+    best_answer, revised_citations = _enforce_sources_section_only(
+        best_answer,
+        allowed_sources=allowed_sources,
+        source_display_map=source_display_map,
+    )
+    return best_answer, revised_errors, revised_citations, regeneration_attempts
+
+
+def ask(
+    question: str,
+    conversation_history: list[dict] = None,
+    images: list[dict] = None,
+    system_prompt: str = None,
+    platform: str = "unknown",
+    scope: dict | None = None,
+) -> tuple[str, list[dict], dict]:
+    """
+    Responde uma pergunta usando RAG + Gemini e retorna trace de telemetria.
+
+    Retorno: (answer, retrieved_chunks, trace)
+    """
+    t0 = _time.monotonic()
+    query_id = _new_query_id()
+    trace: dict[str, Any] = {
+        "query_id": query_id,
+        "platform": platform,
+        "abstained": False,
+        "abstention_reason": None,
+        "confidence": 0.0,
+        "query_plan": {},
+        "retrieved_sources": [],
+        "retrieved_chunk_count": 0,
+        "top_similarity": 0.0,
+        "citations": [],
+        "cited_files": [],
+        "grounding_errors": [],
+        "regeneration_attempts": 0,
+    }
+
+    search_query = _reformulate_query_with_history(question, conversation_history)
+    base_system = system_prompt or config.SYSTEM_PROMPT
+
+    if config.FULL_CONTEXT_ENABLED:
+        full_context = _load_full_context_docs()
+        chunks: list[dict] = []
+        system = base_system
+        if full_context:
+            system += (
+                "\n\n<knowledge_base>\n"
+                "Abaixo esta a BASE DE CONHECIMENTO COMPLETA da Maxima Sistemas. "
+                "Use apenas informacoes explicitamente presentes nesses documentos.\n\n"
+                f"{full_context}\n"
+                "</knowledge_base>"
+            )
+        else:
+            answer = "Base de conhecimento indisponivel no momento. Tente novamente."
+            trace["abstained"] = True
+            trace["abstention_reason"] = "full_context_unavailable"
+            trace["latency_ms"] = int((_time.monotonic() - t0) * 1000)
+            _log_ask_trace(trace)
+            return answer, chunks, trace
+        answer = _ask_model(
+            question=question,
+            system=system,
+            conversation_history=conversation_history,
+            images=images,
+        )
+        trace["latency_ms"] = int((_time.monotonic() - t0) * 1000)
+        _log_ask_trace(trace)
+        return answer, chunks, trace
+
+    query_plan = _classify_query_intent(search_query)
+    trace["query_plan"] = query_plan
+    logger.info(
+        "Roteamento da pergunta: query_id=%s intent=%s modules=%s doc_types=%s",
+        query_id,
+        query_plan.get("intent", "general"),
+        query_plan.get("modules", []),
+        query_plan.get("doc_types", []),
+    )
+
+    merged_chunks, scoped_feedback_chunks, kb_chunks = retrieve_chunks_with_feedback(
+        search_query,
+        query_plan=query_plan,
+        scope=scope,
+    )
+
+    chunks = _rerank_chunks_with_llm(search_query, merged_chunks)[:config.MAX_CONTEXT_CHUNKS]
+    chunk_stats = _summarize_chunks_for_trace(chunks)
+    trace.update(chunk_stats)
+    trace["confidence"] = trace.get("top_similarity", 0.0)
+    trace["feedback_scoped_count"] = len(scoped_feedback_chunks)
+    trace["kb_chunk_count"] = len(kb_chunks)
+    if scoped_feedback_chunks and kb_chunks:
+        feedback_ids = list({
+            str((c.get("metadata") or {}).get("feedback_item_id") or "")
+            for c in scoped_feedback_chunks
+            if (c.get("metadata") or {}).get("feedback_item_id")
+        })
+        base_sources = list({
+            str(c.get("filename") or "")
+            for c in kb_chunks
+            if c.get("filename")
+        })
+        log_documentation_update_task(
+            query=question,
+            feedback_item_ids=feedback_ids,
+            base_sources=base_sources,
+            reason="Feedback escopado usado junto com base principal; revisar possivel contradicao.",
+            metadata={"query_id": query_id, "platform": platform},
+        )
+
+    should_abstain, abstain_reason = _should_strict_abstain(question, chunks)
+    if should_abstain and query_plan and (
+        (query_plan.get("modules") or query_plan.get("doc_types"))
+        and abstain_reason in {"no_chunks", "few_chunks", "low_similarity", "low_similarity_operational"}
+    ):
+        logger.info(
+            "Abstencao inicial (motivo=%s). Tentando fallback de busca global sem filtros.",
+            abstain_reason,
+        )
+        broad_plan = {"intent": "general", "modules": [], "doc_types": []}
+        broad_merged, _broad_scoped_feedback, broad_kb = retrieve_chunks_with_feedback(
+            search_query,
+            query_plan=broad_plan,
+            scope=scope,
+        )
+        combined_chunks = _dedupe_chunks(chunks + broad_merged)
+        fallback_chunks = _rerank_chunks_with_llm(search_query, combined_chunks)[:config.MAX_CONTEXT_CHUNKS]
+        fallback_stats = _summarize_chunks_for_trace(fallback_chunks)
+        improved = (
+            fallback_stats.get("top_similarity", 0.0) > trace.get("top_similarity", 0.0)
+            or fallback_stats.get("retrieved_chunk_count", 0) > trace.get("retrieved_chunk_count", 0)
+        )
+        if improved:
+            chunks = fallback_chunks
+            trace.update(fallback_stats)
+            trace["confidence"] = trace.get("top_similarity", 0.0)
+            trace["kb_chunk_count"] = max(int(trace.get("kb_chunk_count", 0)), len(broad_kb))
+            trace["query_plan_fallback"] = "global_unfiltered"
+            should_abstain, abstain_reason = _should_strict_abstain(question, chunks)
+            logger.info(
+                "Fallback global aplicado: top_similarity=%.3f retrieved_chunks=%d abstain=%s",
+                trace.get("top_similarity", 0.0),
+                trace.get("retrieved_chunk_count", 0),
+                should_abstain,
+            )
+
+    if should_abstain:
+        trace["abstained"] = True
+        trace["abstention_reason"] = abstain_reason
+        answer = _build_abstain_response(question)
+        trace["latency_ms"] = int((_time.monotonic() - t0) * 1000)
+        _log_ask_trace(trace)
+        return answer, chunks, trace
+
+    context = build_context(chunks)
+    business_rules = _load_business_rules_context()
+    intent_instruction = _intent_response_instruction(query_plan)
+    allowed_sources = {_normalize_source_name(s) for s in trace.get("retrieved_sources", [])}
+    source_display_map = {
+        _normalize_source_name(str(source)): str(source)
+        for source in trace.get("retrieved_sources", [])
+        if str(source).strip()
+    }
+
+    system = base_system
+    if business_rules:
+        system += (
+            "\n\n<business_rules>\n"
+            "Abaixo esta o contexto FIXO de regras de negocio do maxPedido. "
+            "Use essas regras como referencia canonica junto com os documentos recuperados.\n\n"
+            f"{business_rules}\n"
+            "</business_rules>"
+        )
+    if query_plan:
+        routed_modules = query_plan.get("modules") or []
+        if routed_modules:
+            system += (
+                "\n\n<routing>\n"
+                f"Pergunta roteada para os modulos: {', '.join(routed_modules)}.\n"
+                "Priorize contexto e exemplos desses modulos quando houver conflito de sinais."
+                "\n</routing>"
+            )
+    if intent_instruction:
+        system += (
+            "\n\n<response_mode>\n"
+            f"{intent_instruction}\n"
+            "</response_mode>"
+        )
+    if context:
+        system += (
+            "\n\n<context>\n"
+            "Abaixo estao os trechos relevantes dos documentos da base de conhecimento. "
+            "Use APENAS essas informacoes para responder.\n\n"
+            f"{context}\n"
+            "</context>"
+        )
+    else:
+        trace["abstained"] = True
+        trace["abstention_reason"] = "no_context_after_merge"
+        answer = _build_abstain_response(question)
+        trace["latency_ms"] = int((_time.monotonic() - t0) * 1000)
+        _log_ask_trace(trace)
+        return answer, chunks, trace
+
+    system += (
+        "\n\n<citation_policy>\n"
+        "Nao inclua citacoes inline no meio dos paragrafos (sem [fonte: ...] por linha).\n"
+        "Use SOMENTE nomes de arquivos que estejam no contexto recuperado.\n"
+        "Inclua uma secao final obrigatoria 'Fontes:' com bullets dos arquivos usados.\n"
+        "Se faltarem evidencias para responder com seguranca, retorne exatamente a frase de no-answer.\n"
+        "</citation_policy>"
+    )
+    if allowed_sources:
+        system += f"\n\n<allowed_sources>{', '.join(sorted(allowed_sources))}</allowed_sources>"
+
+    answer = _ask_model(
+        question=question,
+        system=system,
+        conversation_history=conversation_history,
+        images=images,
+    )
+
+    answer, grounding_errors, cited_sources, regen_attempts = _apply_grounding_regeneration(
+        answer=answer,
+        question=question,
+        system=system,
+        conversation_history=conversation_history,
+        images=images,
+        allowed_sources=allowed_sources,
+        source_display_map=source_display_map,
+    )
+    trace["grounding_errors"] = grounding_errors
+    trace["cited_files"] = sorted(cited_sources)
+    trace["citations"] = sorted(cited_sources)
+    trace["regeneration_attempts"] = regen_attempts
+    if answer.startswith(config.NO_ANSWER_PHRASE):
+        trace["abstained"] = True
+        if not trace["abstention_reason"]:
+            trace["abstention_reason"] = "grounding_validation_failed"
+
+    trace["latency_ms"] = int((_time.monotonic() - t0) * 1000)
+    _log_ask_trace(trace)
+    return answer, chunks, trace
 
 
 # -- Utilitarios ----------------------------------------------------------------
@@ -1499,3 +2588,325 @@ def get_top_knowledge_gaps(limit: int = 10) -> list[dict]:
         logger.error("Erro ao buscar knowledge gaps: %s", e)
         return []
 
+
+def _extract_scalar_rpc_value(result: Any) -> str | None:
+    if result is None:
+        return None
+    if isinstance(result, str):
+        return result
+    if isinstance(result, list) and result:
+        first = result[0]
+        if isinstance(first, dict) and first:
+            first_value = next(iter(first.values()))
+            if first_value is not None:
+                return str(first_value)
+        if isinstance(first, str):
+            return first
+    if isinstance(result, dict) and result:
+        first_value = next(iter(result.values()))
+        if first_value is not None:
+            return str(first_value)
+    return None
+
+
+def submit_feedback_item(
+    *,
+    query: str,
+    bot_answer: str,
+    corrected_answer: str,
+    tags: list[str] | None = None,
+    scope: dict | None = None,
+    created_by: str | None = None,
+    platform: str | None = None,
+    source_message_id: str | None = None,
+    query_id: str | None = None,
+    metadata: dict | None = None,
+) -> str:
+    clean_scope = _normalize_scope(scope) or {"level": "global"}
+    clean_tags = [str(tag).strip() for tag in (tags or []) if str(tag).strip()]
+    payload = {
+        "p_query": (query or "")[:1500],
+        "p_bot_answer": (bot_answer or "")[:12000],
+        "p_corrected_answer": (corrected_answer or "")[:12000],
+        "p_tags": clean_tags,
+        "p_scope": clean_scope,
+        "p_created_by": created_by,
+        "p_platform": platform,
+        "p_source_message_id": source_message_id,
+        "p_query_id": query_id,
+        "p_metadata": metadata or {},
+    }
+    try:
+        result = supabase_rpc("submit_feedback", payload)
+        scalar = _extract_scalar_rpc_value(result)
+        if scalar:
+            return scalar
+    except Exception as e:
+        if not _is_missing_rpc_function(e, "submit_feedback"):
+            raise
+        logger.warning("RPC submit_feedback indisponivel; usando fallback direto na tabela.")
+
+    inserted = supabase_insert(
+        "feedback_items",
+        {
+            "query": payload["p_query"],
+            "bot_answer": payload["p_bot_answer"],
+            "corrected_answer": payload["p_corrected_answer"],
+            "tags": clean_tags,
+            "scope": clean_scope,
+            "status": "PENDING",
+            "created_by": created_by,
+            "platform": platform,
+            "source_message_id": source_message_id,
+            "query_id": query_id,
+            "metadata": metadata or {},
+        },
+    )
+    if not inserted:
+        raise RuntimeError("Falha ao inserir feedback_items.")
+    feedback_id = str(inserted[0]["id"])
+    try:
+        supabase_insert(
+            "feedback_events",
+            {
+                "feedback_item_id": feedback_id,
+                "event_type": "SUBMITTED",
+                "actor": created_by,
+                "payload": {"platform": platform, "query_id": query_id},
+            },
+        )
+    except Exception:
+        logger.warning("Nao foi possivel registrar evento SUBMITTED.", exc_info=True)
+    return feedback_id
+
+
+def list_pending_feedback_items(limit: int = 20) -> list[dict]:
+    safe_limit = max(1, min(int(limit), 200))
+    try:
+        return supabase_rpc("list_pending_feedback", {"p_limit": safe_limit}) or []
+    except Exception as e:
+        if not _is_missing_rpc_function(e, "list_pending_feedback"):
+            raise
+        logger.warning("RPC list_pending_feedback indisponivel; usando fallback por tabela.")
+    return supabase_select(
+        "feedback_items",
+        select="id,query,corrected_answer,tags,scope,created_by,platform,created_at",
+        filters={
+            "status": "eq.PENDING",
+            "order": "created_at.asc",
+            "limit": safe_limit,
+        },
+    )
+
+
+def approve_feedback_item(feedback_id: str, reviewer: str | None = None, note: str | None = None) -> None:
+    try:
+        supabase_rpc(
+            "approve_feedback",
+            {"p_id": feedback_id, "p_reviewer": reviewer, "p_note": note},
+        )
+        return
+    except Exception as e:
+        if not _is_missing_rpc_function(e, "approve_feedback"):
+            raise
+        logger.warning("RPC approve_feedback indisponivel; usando fallback por tabela.")
+
+    supabase_update(
+        "feedback_items",
+        {
+            "status": "APPROVED",
+            "reviewed_by": reviewer,
+            "review_note": note,
+            "reviewed_at": datetime.now(timezone.utc).isoformat(),
+        },
+        {"id": f"eq.{feedback_id}"},
+    )
+    try:
+        supabase_insert(
+            "feedback_events",
+            {
+                "feedback_item_id": feedback_id,
+                "event_type": "APPROVED",
+                "actor": reviewer,
+                "note": note,
+            },
+        )
+    except Exception:
+        logger.warning("Falha ao registrar evento APPROVED.", exc_info=True)
+
+
+def reject_feedback_item(feedback_id: str, reviewer: str | None = None, note: str | None = None) -> None:
+    try:
+        supabase_rpc(
+            "reject_feedback",
+            {"p_id": feedback_id, "p_reviewer": reviewer, "p_note": note},
+        )
+        return
+    except Exception as e:
+        if not _is_missing_rpc_function(e, "reject_feedback"):
+            raise
+        logger.warning("RPC reject_feedback indisponivel; usando fallback por tabela.")
+
+    supabase_update(
+        "feedback_items",
+        {
+            "status": "REJECTED",
+            "reviewed_by": reviewer,
+            "review_note": note,
+            "reviewed_at": datetime.now(timezone.utc).isoformat(),
+        },
+        {"id": f"eq.{feedback_id}"},
+    )
+    try:
+        supabase_insert(
+            "feedback_events",
+            {
+                "feedback_item_id": feedback_id,
+                "event_type": "REJECTED",
+                "actor": reviewer,
+                "note": note,
+            },
+        )
+    except Exception:
+        logger.warning("Falha ao registrar evento REJECTED.", exc_info=True)
+
+
+def _feedback_chunk_content(item: dict) -> str:
+    tags = item.get("tags")
+    if isinstance(tags, list):
+        tags_text = ", ".join(str(tag) for tag in tags if str(tag).strip())
+    else:
+        tags_text = ""
+    question = item.get("query") or ""
+    corrected_answer = item.get("corrected_answer") or ""
+    parts = [
+        f"Pergunta original: {question}",
+        f"Resposta corrigida: {corrected_answer}",
+    ]
+    if tags_text:
+        parts.append(f"Tags: {tags_text}")
+    return "\n".join(parts)
+
+
+def publish_feedback_item(
+    feedback_id: str,
+    publisher: str | None = None,
+    scope_override: dict | None = None,
+) -> str:
+    rows = supabase_select(
+        "feedback_items",
+        select="id,query,corrected_answer,scope,status,tags",
+        filters={"id": f"eq.{feedback_id}", "limit": "1"},
+    )
+    if not rows:
+        raise ValueError(f"Feedback nao encontrado: {feedback_id}")
+    item = rows[0]
+    status = str(item.get("status") or "").upper()
+    if status not in {"APPROVED", "PUBLISHED"}:
+        raise ValueError("Feedback precisa estar APPROVED para publicar.")
+
+    chunk_scope = _normalize_scope(scope_override) or item.get("scope") or {"level": "global"}
+    chunk_content = _feedback_chunk_content(item)
+    embedding = create_document_embedding(chunk_content)
+    embedding_payload = embedding_to_pgvector(embedding)
+
+    try:
+        result = supabase_rpc(
+            "publish_feedback",
+            {
+                "p_id": feedback_id,
+                "p_actor": publisher,
+                "p_chunk_text": chunk_content,
+                "p_scope_override": chunk_scope,
+                "p_embedding": embedding_payload,
+            },
+        )
+        scalar = _extract_scalar_rpc_value(result)
+        if scalar:
+            return scalar
+    except Exception as e:
+        if not _is_missing_rpc_function(e, "publish_feedback"):
+            raise
+        logger.warning("RPC publish_feedback indisponivel; usando fallback por tabela.")
+
+    inserted = supabase_insert(
+        "feedback_chunks",
+        {
+            "feedback_item_id": feedback_id,
+            "content": chunk_content,
+            "scope": chunk_scope,
+            "active": True,
+            "embedding": embedding_payload,
+            "published_by": publisher,
+        },
+    )
+    if not inserted:
+        raise RuntimeError("Falha ao inserir feedback_chunks.")
+    chunk_id = str(inserted[0]["id"])
+    supabase_update(
+        "feedback_items",
+        {
+            "status": "PUBLISHED",
+            "published_at": datetime.now(timezone.utc).isoformat(),
+            "reviewed_by": publisher,
+        },
+        {"id": f"eq.{feedback_id}"},
+    )
+    try:
+        supabase_insert(
+            "feedback_events",
+            {
+                "feedback_item_id": feedback_id,
+                "event_type": "PUBLISHED",
+                "actor": publisher,
+                "payload": {"feedback_chunk_id": chunk_id},
+            },
+        )
+    except Exception:
+        logger.warning("Falha ao registrar evento PUBLISHED.", exc_info=True)
+    return chunk_id
+
+
+def log_documentation_update_task(
+    *,
+    query: str,
+    feedback_item_ids: list[str] | None = None,
+    base_sources: list[str] | None = None,
+    reason: str = "Feedback escopado divergiu da base principal",
+    metadata: dict | None = None,
+) -> None:
+    payload = {
+        "p_query": (query or "")[:1500],
+        "p_feedback_item_ids": feedback_item_ids or [],
+        "p_base_sources": base_sources or [],
+        "p_reason": reason,
+        "p_metadata": metadata or {},
+    }
+    try:
+        supabase_rpc("create_documentation_update_task", payload)
+        return
+    except Exception as e:
+        if not _is_missing_rpc_function(e, "create_documentation_update_task"):
+            logger.warning("Erro ao registrar documentation_update_task via RPC: %s", e)
+            return
+        logger.warning(
+            "RPC create_documentation_update_task indisponivel; usando fallback por tabela."
+        )
+
+    try:
+        supabase_insert(
+            "documentation_update_tasks",
+            {
+                "query": payload["p_query"],
+                "feedback_item_ids": payload["p_feedback_item_ids"],
+                "base_sources": payload["p_base_sources"],
+                "reason": payload["p_reason"],
+                "status": "OPEN",
+                "metadata": payload["p_metadata"],
+            },
+        )
+    except Exception as fallback_error:
+        logger.warning(
+            "Erro ao registrar documentation_update_task via fallback: %s",
+            fallback_error,
+        )
