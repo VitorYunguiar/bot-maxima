@@ -58,6 +58,34 @@ Principais campos:
 Guia rapido:
 
 - [GUIA_TEAMS.md](./GUIA_TEAMS.md)
+- [GUIA_DOCKER.md](./GUIA_DOCKER.md)
+
+## Docker
+
+Arquivos prontos:
+
+- `Dockerfile`
+- `docker-compose.yml`
+- `.dockerignore`
+
+Subida rapida:
+
+```sh
+docker compose build
+docker compose up -d discord_bot teams_bot
+```
+
+Gerar pacote do Teams:
+
+```sh
+docker compose --profile tools run --rm teams_package
+```
+
+Ingestao inicial:
+
+```sh
+docker compose --profile tools run --rm ingest
+```
 
 ## Observacoes de implantacao
 

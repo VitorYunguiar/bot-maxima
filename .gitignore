@@ -12,6 +12,7 @@ __pycache__/
 documentos/
 ingest_failures.json
 teams_manifest/build/
+runtime/
 
 # IDE
 .vscode/

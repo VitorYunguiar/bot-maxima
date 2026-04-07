@@ -1,0 +1,71 @@
+services:
+  discord_bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: bot-maxima:latest
+    container_name: bot-maxima-discord
+    command: ["python", "bot.py"]
+    env_file:
+      - .env
+    restart: unless-stopped
+    environment:
+      FAILED_INGEST_REPORT: /app/runtime/ingest_failures.json
+    volumes:
+      - ./documentos:/app/documentos:ro
+      - ./runtime:/app/runtime
+
+  teams_bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: bot-maxima:latest
+    container_name: bot-maxima-teams
+    command: ["python", "bot_teams.py"]
+    env_file:
+      - .env
+    restart: unless-stopped
+    environment:
+      FAILED_INGEST_REPORT: /app/runtime/ingest_failures.json
+    ports:
+      - "3978:3978"
+    volumes:
+      - ./documentos:/app/documentos:ro
+      - ./runtime:/app/runtime
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:3978/api/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  ingest:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: bot-maxima:latest
+    container_name: bot-maxima-ingest
+    command: ["python", "ingest.py", "./documentos"]
+    env_file:
+      - .env
+    profiles:
+      - tools
+    environment:
+      FAILED_INGEST_REPORT: /app/runtime/ingest_failures.json
+    volumes:
+      - ./documentos:/app/documentos:ro
+      - ./runtime:/app/runtime
+
+  teams_package:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: bot-maxima:latest
+    container_name: bot-maxima-teams-package
+    command: ["python", "scripts/build_teams_package.py"]
+    env_file:
+      - .env
+    profiles:
+      - tools
+    volumes:
+      - ./teams_manifest/build:/app/teams_manifest/build
