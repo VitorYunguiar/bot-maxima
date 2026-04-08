@@ -110,6 +110,38 @@ class TestCitationFormatting(unittest.TestCase):
         self.assertEqual(cited, {"guia-maxpedido.md", "parametros.md"})
 
 
+class TestAnalyticalContextFormatting(unittest.TestCase):
+    def test_build_context_includes_analytical_block_before_evidence(self):
+        chunks = [
+            {
+                "id": "chunk-1",
+                "document_id": "doc-1",
+                "filename": "pedidos.md",
+                "content": "Validar MXSINTEGRACAOPEDIDO quando o pedido nao aparece no ERP.",
+                "chunk_index": 0,
+                "similarity": 0.91,
+                "heading_path": "Pedidos > Pedido nao aparece no ERP",
+                "semantic_context": "Secao: Pedidos > Pedido nao aparece no ERP | Tabelas: MXSINTEGRACAOPEDIDO",
+                "answer_mode": "troubleshooting",
+                "entities": {
+                    "tables": ["MXSINTEGRACAOPEDIDO"],
+                    "parameters": [],
+                    "endpoints": [],
+                    "statuses": [],
+                    "error_terms": ["pedido nao aparece no ERP"],
+                },
+                "metadata": {"doc_priority": 5, "source_kind": "kb"},
+            }
+        ]
+
+        context = rag.build_context(chunks)
+
+        self.assertIn("<analytical_context>", context)
+        self.assertIn("Assunto/secoes: Pedidos > Pedido nao aparece no ERP", context)
+        self.assertIn("Tabelas: MXSINTEGRACAOPEDIDO", context)
+        self.assertLess(context.index("<analytical_context>"), context.index("<evidence>"))
+
+
 class TestOpenAIExtraction(unittest.TestCase):
     def test_extracts_text_from_nested_content_item(self):
         content = [{"type": "text", "text": {"value": "Resposta final"}}]

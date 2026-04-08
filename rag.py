@@ -1319,9 +1319,6 @@ def _load_business_rules_context() -> str:
         return ""
 
     max_chars = max(500, int(config.BUSINESS_RULES_MAX_CHARS))
-    if _active_llm_provider() == "openai":
-        # Reduz custo/latencia de prompts longos no OpenAI.
-        max_chars = min(max_chars, 3000)
     if len(text) > max_chars:
         logger.warning(
             "Arquivo de regras de negocio excede limite (%s chars). Truncando para %s.",
@@ -1747,6 +1744,102 @@ def _merge_document_chunks(doc_chunks: list[dict]) -> str:
     return "\n\n".join(parts)
 
 
+def _chunk_meta(chunk: dict) -> dict:
+    meta = chunk.get("metadata") or {}
+    return meta if isinstance(meta, dict) else {}
+
+
+def _chunk_analytical_value(chunk: dict, key: str, default=None):
+    value = chunk.get(key)
+    if value not in (None, "", {}, []):
+        return value
+    return _chunk_meta(chunk).get(key, default)
+
+
+def _merge_chunk_entities(doc_chunks: list[dict]) -> dict[str, list[str]]:
+    merged: dict[str, list[str]] = {}
+    seen: dict[str, set[str]] = {}
+
+    for chunk in doc_chunks:
+        entities = _chunk_analytical_value(chunk, "entities", {})
+        if not isinstance(entities, dict):
+            continue
+        for key, values in entities.items():
+            if not isinstance(values, list):
+                continue
+            bucket = merged.setdefault(str(key), [])
+            bucket_seen = seen.setdefault(str(key), set())
+            for value in values:
+                clean = str(value or "").strip()
+                if not clean:
+                    continue
+                normalized = normalize_text(clean)
+                if normalized in bucket_seen:
+                    continue
+                bucket_seen.add(normalized)
+                bucket.append(clean)
+                if len(bucket) >= 12:
+                    break
+
+    return {key: values for key, values in merged.items() if values}
+
+
+def _format_entities_for_context(entities: dict[str, list[str]]) -> str:
+    labels = {
+        "tables": "Tabelas",
+        "parameters": "Parametros",
+        "endpoints": "Endpoints",
+        "statuses": "Status/codigos",
+        "error_terms": "Termos de erro",
+    }
+    parts = []
+    for key, label in labels.items():
+        values = entities.get(key) or []
+        if values:
+            parts.append(f"{label}: {', '.join(values[:10])}")
+    return "\n".join(parts)
+
+
+def _build_analytical_context_block(doc_chunks: list[dict]) -> str:
+    heading_paths: list[str] = []
+    semantic_contexts: list[str] = []
+    answer_modes: list[str] = []
+    for chunk in doc_chunks:
+        heading_path = str(_chunk_analytical_value(chunk, "heading_path", "") or "").strip()
+        if heading_path and heading_path not in heading_paths:
+            heading_paths.append(heading_path)
+
+        semantic_context = str(_chunk_analytical_value(chunk, "semantic_context", "") or "").strip()
+        if semantic_context and semantic_context not in semantic_contexts:
+            semantic_contexts.append(semantic_context)
+
+        answer_mode = str(_chunk_analytical_value(chunk, "answer_mode", "") or "").strip()
+        if answer_mode and answer_mode != "general" and answer_mode not in answer_modes:
+            answer_modes.append(answer_mode)
+
+    entities_text = _format_entities_for_context(_merge_chunk_entities(doc_chunks))
+    lines: list[str] = []
+    if heading_paths:
+        lines.append(f"Assunto/secoes: {' | '.join(heading_paths[:4])}")
+    if answer_modes:
+        lines.append(f"Tipo de analise sugerida: {', '.join(answer_modes[:4])}")
+    if semantic_contexts:
+        lines.append("Resumo operacional recuperado:")
+        lines.extend(f"- {ctx}" for ctx in semantic_contexts[:4])
+    if entities_text:
+        lines.append("Entidades extraidas:")
+        lines.append(entities_text)
+
+    if not lines:
+        return ""
+
+    return (
+        "<analytical_context>\n"
+        + "\n".join(lines)
+        + "\n</analytical_context>"
+    )
+
+
 # -- Montagem do contexto -------------------------------------------------------
 def build_context(chunks: list[dict]) -> str:
     if not chunks:
@@ -1763,6 +1856,7 @@ def build_context(chunks: list[dict]) -> str:
         merged_content = _merge_document_chunks(sorted_doc_chunks)
         if not merged_content.strip():
             continue
+        analytical_context = _build_analytical_context_block(sorted_doc_chunks)
 
         filename = next(
             (c.get("filename") for c in sorted_doc_chunks if c.get("filename")),
@@ -1807,6 +1901,7 @@ def build_context(chunks: list[dict]) -> str:
                 "max_similarity": max_similarity,
                 "sort_similarity": sort_similarity,
                 "merged_content": merged_content,
+                "analytical_context": analytical_context,
                 "chunk_count": len(sorted_doc_chunks),
             }
         )
@@ -1815,9 +1910,12 @@ def build_context(chunks: list[dict]) -> str:
 
     context_parts = []
     for index, doc in enumerate(docs_for_context, start=1):
+        doc_body = doc["merged_content"]
+        if doc.get("analytical_context"):
+            doc_body = f"{doc['analytical_context']}\n\n<evidence>\n{doc_body}\n</evidence>"
         context_parts.append(
             f"<document index=\"{index}\" source=\"{doc['filename']}\" relevance=\"{doc['max_similarity']:.2f}\" chunks=\"{doc['chunk_count']}\">\n"
-            f"{doc['merged_content']}\n"
+            f"{doc_body}\n"
             f"</document>"
         )
 
@@ -1908,8 +2006,9 @@ def _rerank_chunks_with_llm(
     if top_n is None:
         top_n = config.MAX_CONTEXT_CHUNKS
 
-    # Montar resumos compactos para scoring (max 10 candidatos)
-    candidates = chunks[:10]
+    # Montar resumos compactos para scoring dos melhores candidatos recuperados.
+    candidate_count = max(2, min(int(config.RERANKER_CANDIDATE_COUNT), len(chunks)))
+    candidates = chunks[:candidate_count]
     chunk_summaries = []
     for i, chunk in enumerate(candidates):
         content = (chunk.get("content") or "")[:400].rsplit(" ", 1)[0]
@@ -1950,9 +2049,9 @@ def _rerank_chunks_with_llm(
             for i, chunk in enumerate(candidates):
                 if i not in seen:
                     reranked.append(chunk)
-            # Adicionar chunks alem dos 10 candidatos ao final
-            if len(chunks) > 10:
-                reranked.extend(chunks[10:])
+            # Adicionar chunks alem dos candidatos ao final
+            if len(chunks) > candidate_count:
+                reranked.extend(chunks[candidate_count:])
             logger.info("Re-ranking LLM aplicado: %d chunks reordenados", len(indices))
             return reranked
 
@@ -2071,8 +2170,7 @@ def _ask_model(
     requested_max_tokens = int(max_tokens_override or config.ASK_MAX_TOKENS)
     try:
         if provider == "openai":
-            # Em prompts longos, limites muito altos aumentam bastante a latencia no OpenAI.
-            max_tokens = max(256, min(requested_max_tokens, 4096))
+            max_tokens = max(256, min(requested_max_tokens, int(config.OPENAI_MAX_OUTPUT_TOKENS)))
             prompt_chars = len(question or "") + len(system or "")
             for msg in conversation_history or []:
                 prompt_chars += len(str(msg.get("content", "")))
@@ -2103,7 +2201,7 @@ def _ask_model(
                 fallback_response = _openai_chat_generate(
                     model=fallback_model,
                     messages=messages,
-                    max_tokens=max(256, min(max_tokens, 2048)),
+                    max_tokens=max_tokens,
                 )
                 if fallback_response.text:
                     return fallback_response.text
@@ -2431,11 +2529,22 @@ def ask(
             f"{intent_instruction}\n"
             "</response_mode>"
         )
+    if config.ANALYTICAL_CONTEXT_ENABLED:
+        system += (
+            "\n\n<analysis_policy>\n"
+            "Responda como um analista junior de suporte tecnico: conecte evidencias do contexto, "
+            "explique o impacto operacional e proponha a proxima verificacao quando houver base para isso. "
+            "Separe claramente o que esta documentado do que for analise provavel. "
+            "Use expressoes como 'Pela documentacao' para fatos e 'Analise provavel' para inferencias. "
+            "Nao invente campos, telas, parametros, SQL ou procedimentos ausentes nas fontes recuperadas.\n"
+            "</analysis_policy>"
+        )
     if context:
         system += (
             "\n\n<context>\n"
             "Abaixo estao os trechos relevantes dos documentos da base de conhecimento. "
-            "Use APENAS essas informacoes para responder.\n\n"
+            "Use APENAS essas informacoes para responder. Quando houver bloco analytical_context, "
+            "use-o apenas como organizacao do contexto recuperado; a evidencia continua sendo o conteudo em evidence.\n\n"
             f"{context}\n"
             "</context>"
         )

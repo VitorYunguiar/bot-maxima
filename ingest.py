@@ -22,6 +22,7 @@ import re
 import socket
 import time
 import unicodedata
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -124,6 +125,20 @@ READERS = {
 # --- CHUNKING (singleton lazy do splitter) ---
 
 _splitter: MarkdownTextSplitter | None = None
+_document_sections_available: bool | None = None
+
+
+@dataclass
+class AnalyticalSection:
+    section_index: int
+    title: str
+    heading_path: str
+    content: str
+    module: str
+    answer_mode: str
+    entities: dict[str, list[str]]
+    semantic_context: str
+    section_id: str | None = None
 
 
 def _get_splitter() -> MarkdownTextSplitter:
@@ -225,6 +240,244 @@ def chunk_text_with_context(text: str, doc_title: str = "") -> list[str]:
         contextualized[0][:150],
     )
     return contextualized
+
+
+# --- Contexto analitico por secao ---
+
+_TABLE_RE = re.compile(r"\b(?:MXS[A-Z0-9_]+|ERP_[A-Z0-9_]+|PC[A-Z0-9_]+|PCT[A-Z0-9_]+|SYNC_[A-Z0-9_]+)\b")
+_ENDPOINT_RE = re.compile(r"(?<!\S)(?:/api|api/v\d+)[A-Za-z0-9_./?=&%-]*", flags=re.IGNORECASE)
+_CODE_TOKEN_RE = re.compile(r"`([^`]{3,80})`")
+_UPPER_TOKEN_RE = re.compile(r"\b[A-Z][A-Z0-9_]{3,}\b")
+_STATUS_RE = re.compile(r"\b(?:status|erro|codigo|c[oó]digo)\s*(?:=|:)?\s*[0-9]{1,4}\b", flags=re.IGNORECASE)
+_ERROR_LINE_RE = re.compile(r"\b(?:erro|falha|critica|cr[ií]tica|bloqueio|bloqueado|nao|n[aã]o)\b", flags=re.IGNORECASE)
+
+
+def _unique_limited(values: list[str], limit: int = 30) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        clean = re.sub(r"\s+", " ", str(value or "").strip().strip("`*.,;:()[]{}"))
+        if not clean:
+            continue
+        key = normalize_text(clean)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        result.append(clean)
+        if len(result) >= limit:
+            break
+    return result
+
+
+def _extract_analytical_entities(text: str) -> dict[str, list[str]]:
+    tables = _unique_limited([m.group(0).upper() for m in _TABLE_RE.finditer(text)])
+    table_keys = {normalize_text(t) for t in tables}
+
+    parameters: list[str] = []
+    for match in _CODE_TOKEN_RE.finditer(text):
+        token = match.group(1).strip()
+        if _UPPER_TOKEN_RE.fullmatch(token) and normalize_text(token) not in table_keys:
+            parameters.append(token.upper())
+
+    for line in text.splitlines():
+        normalized_line = normalize_text(line)
+        if "parametro" not in normalized_line and "configuracao" not in normalized_line:
+            continue
+        parameters.extend(
+            token.upper()
+            for token in _UPPER_TOKEN_RE.findall(line)
+            if normalize_text(token) not in table_keys
+        )
+
+    endpoints = _unique_limited([m.group(0) for m in _ENDPOINT_RE.finditer(text)])
+    statuses = _unique_limited([m.group(0) for m in _STATUS_RE.finditer(text)], limit=20)
+    error_terms = _unique_limited(
+        [line.strip("- *") for line in text.splitlines() if _ERROR_LINE_RE.search(line)],
+        limit=12,
+    )
+
+    return {
+        "tables": tables,
+        "parameters": _unique_limited(parameters),
+        "endpoints": endpoints,
+        "statuses": statuses,
+        "error_terms": error_terms,
+    }
+
+
+def _infer_answer_mode(text: str, heading_path: str = "") -> str:
+    normalized = normalize_text(f"{heading_path}\n{text}")
+    if any(term in normalized for term in ("erro", "falha", "critica", "problema", "nao aparece", "nao sincroniza")):
+        return "troubleshooting"
+    if any(term in normalized for term in ("select ", " from ", " join ", " tabela", " campo", " coluna", " banco")):
+        return "sql_lookup"
+    if any(term in normalized for term in ("parametro", "configuracao", "habilitar", "desabilitar", "permissao")):
+        return "configuration"
+    if any(term in normalized for term in ("integracao", "endpoint", " api", " erp", "json", "extrator")):
+        return "integration"
+    if any(term in normalized for term in ("pedido", "venda", "orcamento", "rota", "visita", "processo", "fluxo")):
+        return "process"
+    return "general"
+
+
+def _infer_section_module(base_module: str, heading_path: str, content: str) -> str:
+    inferred = _infer_module("", heading_path, content[:800], "md")
+    if inferred != "geral":
+        return inferred
+    return base_module or "geral"
+
+
+def _build_semantic_context(
+    *,
+    doc_title: str,
+    heading_path: str,
+    module: str,
+    answer_mode: str,
+    entities: dict[str, list[str]],
+) -> str:
+    if not config.ANALYTICAL_CONTEXT_ENABLED:
+        return ""
+
+    parts = [f"Documento: {doc_title}" if doc_title else ""]
+    if heading_path:
+        parts.append(f"Secao: {heading_path}")
+    if module and module != "geral":
+        parts.append(f"Modulo: {module}")
+    if answer_mode and answer_mode != "general":
+        parts.append(f"Modo de resposta: {answer_mode}")
+
+    entity_parts = []
+    for label, key in (
+        ("Tabelas", "tables"),
+        ("Parametros", "parameters"),
+        ("Endpoints", "endpoints"),
+        ("Status/codigos", "statuses"),
+    ):
+        values = entities.get(key) or []
+        if values:
+            entity_parts.append(f"{label}: {', '.join(values[:8])}")
+    if entity_parts:
+        parts.append("; ".join(entity_parts))
+
+    return " | ".join(part for part in parts if part).strip()
+
+
+def _split_markdown_sections(
+    text: str,
+    *,
+    doc_title: str,
+    base_module: str,
+    doc_type: str,
+) -> list[AnalyticalSection]:
+    if doc_type.lower() != "md":
+        entities = _extract_analytical_entities(text)
+        answer_mode = _infer_answer_mode(text, doc_title)
+        return [
+            AnalyticalSection(
+                section_index=0,
+                title=doc_title,
+                heading_path=doc_title,
+                content=text,
+                module=base_module,
+                answer_mode=answer_mode,
+                entities=entities,
+                semantic_context=_build_semantic_context(
+                    doc_title=doc_title,
+                    heading_path=doc_title,
+                    module=base_module,
+                    answer_mode=answer_mode,
+                    entities=entities,
+                ),
+            )
+        ]
+
+    matches = list(re.finditer(r"^(#{1,4})\s+(.+)$", text, re.MULTILINE))
+    if not matches:
+        entities = _extract_analytical_entities(text)
+        answer_mode = _infer_answer_mode(text, doc_title)
+        return [
+            AnalyticalSection(
+                section_index=0,
+                title=doc_title,
+                heading_path=doc_title,
+                content=text,
+                module=base_module,
+                answer_mode=answer_mode,
+                entities=entities,
+                semantic_context=_build_semantic_context(
+                    doc_title=doc_title,
+                    heading_path=doc_title,
+                    module=base_module,
+                    answer_mode=answer_mode,
+                    entities=entities,
+                ),
+            )
+        ]
+
+    sections: list[AnalyticalSection] = []
+    active_headings: dict[int, str] = {}
+
+    preamble = text[: matches[0].start()].strip()
+    if preamble:
+        entities = _extract_analytical_entities(preamble)
+        answer_mode = _infer_answer_mode(preamble, doc_title)
+        sections.append(
+            AnalyticalSection(
+                section_index=len(sections),
+                title=doc_title,
+                heading_path=doc_title,
+                content=preamble,
+                module=base_module,
+                answer_mode=answer_mode,
+                entities=entities,
+                semantic_context=_build_semantic_context(
+                    doc_title=doc_title,
+                    heading_path=doc_title,
+                    module=base_module,
+                    answer_mode=answer_mode,
+                    entities=entities,
+                ),
+            )
+        )
+
+    for idx, match in enumerate(matches):
+        level = len(match.group(1))
+        heading = match.group(2).strip().strip("#").strip()
+        active_headings[level] = heading
+        for deeper in list(active_headings):
+            if deeper > level:
+                del active_headings[deeper]
+
+        start = match.start()
+        end = matches[idx + 1].start() if idx + 1 < len(matches) else len(text)
+        content = text[start:end].strip()
+        if not content:
+            continue
+
+        heading_path = " > ".join(active_headings[lvl] for lvl in sorted(active_headings))
+        entities = _extract_analytical_entities(content)
+        answer_mode = _infer_answer_mode(content, heading_path)
+        section_module = _infer_section_module(base_module, heading_path, content)
+        sections.append(
+            AnalyticalSection(
+                section_index=len(sections),
+                title=heading,
+                heading_path=heading_path,
+                content=content,
+                module=section_module,
+                answer_mode=answer_mode,
+                entities=entities,
+                semantic_context=_build_semantic_context(
+                    doc_title=doc_title,
+                    heading_path=heading_path,
+                    module=section_module,
+                    answer_mode=answer_mode,
+                    entities=entities,
+                ),
+            )
+        )
+
+    return sections
 
 
 # --- P1.3: Inferencia de prioridade de documento ---
@@ -903,23 +1156,80 @@ def _build_chunk_row(
     title: str,
     doc_priority: int,
     embedding: list[float],
+    section: AnalyticalSection | None = None,
 ) -> dict:
-    return {
+    metadata = {
+        "filename": filename,
+        "chunk_index": chunk_index,
+        "doc_type": doc_type,
+        "source_type": source_type,
+        "module": section.module if section else module,
+        "title": title,
+        "doc_priority": doc_priority,
+    }
+    if section:
+        metadata.update(
+            {
+                "section_index": section.section_index,
+                "section_title": section.title,
+                "heading_path": section.heading_path,
+                "semantic_context": section.semantic_context,
+                "entities": section.entities,
+                "answer_mode": section.answer_mode,
+            }
+        )
+
+    row = {
         "document_id": doc_id,
         "content": clean_content,
         "chunk_index": chunk_index,
-        "metadata": {
-            "filename": filename,
-            "chunk_index": chunk_index,
-            "doc_type": doc_type,
-            "source_type": source_type,
-            "module": module,
-            "title": title,
-            "doc_priority": doc_priority,
-        },
+        "metadata": metadata,
         "embedding": embedding_to_pgvector(embedding),
         "token_count": len(clean_content.split()),
     }
+    if section and section.section_id:
+        row.update(
+            {
+                "section_id": section.section_id,
+                "heading_path": section.heading_path,
+                "semantic_context": section.semantic_context,
+                "entities": section.entities,
+                "answer_mode": section.answer_mode,
+            }
+        )
+    return row
+
+
+def _insert_document_section(doc_id: str, section: AnalyticalSection) -> str | None:
+    global _document_sections_available
+    if _document_sections_available is False:
+        return None
+
+    try:
+        result = supabase_insert(
+            "document_sections",
+            {
+                "document_id": doc_id,
+                "section_index": section.section_index,
+                "heading_path": section.heading_path,
+                "title": section.title,
+                "module": section.module,
+                "answer_mode": section.answer_mode,
+                "semantic_context": section.semantic_context,
+                "entities": section.entities,
+                "metadata": {"source": "ingest.py"},
+            },
+        )
+        section_id = str(result[0]["id"]) if result and result[0].get("id") else None
+        _document_sections_available = True
+        return section_id
+    except Exception as e:
+        _document_sections_available = False
+        logger.warning(
+            "Camada document_sections indisponivel (%s). Gravando contexto analitico apenas em metadata JSONB.",
+            e,
+        )
+        return None
 
 
 def _ingest_text_source(
@@ -942,21 +1252,41 @@ def _ingest_text_source(
         }
 
     module = _infer_module(filename, title, source, doc_type)
-    # P1.2: Usar chunking com headers contextuais
-    chunks = chunk_text_with_context(text, doc_title=title)
-    logger.info("%s chunks gerados para %s", len(chunks), filename)
+    sections = _split_markdown_sections(
+        text,
+        doc_title=title,
+        base_module=module,
+        doc_type=doc_type,
+    )
+    chunk_items: list[tuple[int, str, AnalyticalSection]] = []
+    for section in sections:
+        section_chunks = _get_splitter().split_text(section.content)
+        if not section_chunks and section.content.strip():
+            section_chunks = [section.content.strip()]
+        for raw_chunk in section_chunks:
+            chunk_text_content = raw_chunk
+            if section.semantic_context:
+                chunk_text_content = f"{section.semantic_context}\n\n{raw_chunk}"
+            chunk_items.append((len(chunk_items), chunk_text_content, section))
+
+    logger.info(
+        "%s chunks gerados para %s em %s secoes analiticas",
+        len(chunk_items),
+        filename,
+        len(sections),
+    )
     logger.info("Modulo inferido para %s: %s", filename, module)
     if config.CONTEXTUAL_RETRIEVAL_ENABLED:
         model_cfg = get_model_config()
         logger.info(
             "Contextual Retrieval ATIVO para %s (%d chunks serao enriquecidos via %s/%s)",
             filename,
-            len(chunks),
+            len(chunk_items),
             model_cfg.get("llm_provider", "gemini"),
             model_cfg.get("contextual_model", config.CONTEXTUAL_RETRIEVAL_MODEL),
         )
     # P1.3: Inferir prioridade do documento
-    doc_priority = _infer_priority(filename, chunk_count=len(chunks))
+    doc_priority = _infer_priority(filename, chunk_count=len(chunk_items))
 
     existing = supabase_select("documents", select="id", filters={"filename": f"eq.{filename}"})
 
@@ -988,33 +1318,39 @@ def _ingest_text_source(
         },
     )
     doc_id = doc_result[0]["id"]
+    for section in sections:
+        section.section_id = _insert_document_section(doc_id, section)
 
     batch_size = max(1, config.EMBEDDING_BATCH_SIZE)
     total_inserted = 0
     failed_chunks: list[int] = []
 
-    for batch_start in range(0, len(chunks), batch_size):
-        batch = chunks[batch_start : batch_start + batch_size]
-        clean_batch: list[tuple[int, str]] = []
+    for batch_start in range(0, len(chunk_items), batch_size):
+        batch = chunk_items[batch_start : batch_start + batch_size]
+        clean_batch: list[tuple[int, str, AnalyticalSection]] = []
 
-        for i, chunk_text_content in enumerate(batch):
-            chunk_index = batch_start + i
+        for chunk_index, chunk_text_content, section in batch:
             clean_content = chunk_text_content.replace("\x00", "").strip()
             if not clean_content:
                 failed_chunks.append(chunk_index)
                 continue
-            clean_batch.append((chunk_index, clean_content))
+            clean_batch.append((chunk_index, clean_content, section))
 
         # Contextual Retrieval em batch: enriquecer chunks com contexto do documento
         if clean_batch:
             for ctx_start in range(0, len(clean_batch), _CONTEXTUAL_BATCH_SIZE):
                 ctx_sub = clean_batch[ctx_start : ctx_start + _CONTEXTUAL_BATCH_SIZE]
+                ctx_pairs = [(chunk_index, clean_content) for chunk_index, clean_content, _section in ctx_sub]
                 ctx_result = _contextualize_chunks_batch(
-                    chunks_with_indices=ctx_sub,
+                    chunks_with_indices=ctx_pairs,
                     full_document=text,
                     filename=filename,
                 )
-                clean_batch[ctx_start : ctx_start + _CONTEXTUAL_BATCH_SIZE] = ctx_result
+                sections_by_index = {chunk_index: section for chunk_index, _clean_content, section in ctx_sub}
+                clean_batch[ctx_start : ctx_start + _CONTEXTUAL_BATCH_SIZE] = [
+                    (chunk_index, clean_content, sections_by_index[chunk_index])
+                    for chunk_index, clean_content in ctx_result
+                ]
 
         if not clean_batch:
             continue
@@ -1022,10 +1358,11 @@ def _ingest_text_source(
         rows = []
         indices = [item[0] for item in clean_batch]
         contents = [item[1] for item in clean_batch]
+        sections_for_batch = [item[2] for item in clean_batch]
 
         try:
             embeddings = _embed_batch_with_retry(contents, filename, indices[0])
-            for chunk_index, clean_content, embedding in zip(indices, contents, embeddings):
+            for chunk_index, clean_content, section, embedding in zip(indices, contents, sections_for_batch, embeddings):
                 rows.append(_build_chunk_row(
                     doc_id=doc_id,
                     chunk_index=chunk_index,
@@ -1037,6 +1374,7 @@ def _ingest_text_source(
                     title=title,
                     doc_priority=doc_priority,
                     embedding=embedding,
+                    section=section,
                 ))
         except Exception as batch_error:
             logger.error(
@@ -1045,7 +1383,7 @@ def _ingest_text_source(
                 batch_start,
                 batch_error,
             )
-            for chunk_index, clean_content in clean_batch:
+            for chunk_index, clean_content, section in clean_batch:
                 try:
                     embedding = _embed_batch_with_retry([clean_content], filename, chunk_index)[0]
                     rows.append(_build_chunk_row(
@@ -1059,6 +1397,7 @@ def _ingest_text_source(
                         title=title,
                         doc_priority=doc_priority,
                         embedding=embedding,
+                        section=section,
                     ))
                 except Exception as chunk_error:
                     failed_chunks.append(chunk_index)
@@ -1068,7 +1407,7 @@ def _ingest_text_source(
             supabase_insert("document_chunks", rows)
             total_inserted += len(rows)
 
-        logger.info("%s/%s chunks inseridos (%s)", total_inserted, len(chunks), filename)
+        logger.info("%s/%s chunks inseridos (%s)", total_inserted, len(chunk_items), filename)
 
     if total_inserted == 0:
         logger.error("Nenhum chunk inserido para %s. Revertendo document row.", filename)
@@ -1088,7 +1427,7 @@ def _ingest_text_source(
     _save_failed_report_entry(
         filename=filename,
         source=source,
-        total_chunks=len(chunks),
+        total_chunks=len(chunk_items),
         failed_chunks=failed_chunks,
         source_type=source_type,
     )
