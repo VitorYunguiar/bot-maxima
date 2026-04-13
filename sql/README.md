@@ -2,10 +2,10 @@
 
 Choose one schema and keep it aligned with `.env`:
 
-- `sql/setup_1536.sql` -> `VECTOR(1536)` (recommended default and usually compatible in Supabase)
+- `sql/setup_1536.sql` -> `VECTOR(1536)` (recommended default)
 - `sql/setup.sql` -> `VECTOR(3072)` (higher quality, only if your pgvector accepts 3072)
 
-After running one SQL script in Supabase, set the same value in `.env`:
+After running one SQL script in PostgreSQL, set the same value in `.env`:
 
 ```env
 EMBEDDING_DIMENSIONS=1536
@@ -19,7 +19,7 @@ EMBEDDING_DIMENSIONS=3072
 
 Then re-run ingestion to regenerate all embeddings.
 
-If Supabase rejects `VECTOR(3072)`, use `1536`. This is typically due to pgvector limits in the project instance/version.
+If your PostgreSQL/pgvector setup rejects `VECTOR(3072)`, use `1536`.
 
 ## Additional migrations
 
@@ -41,4 +41,4 @@ After the base setup script, run optional migrations according to the features y
   - `evaluation_results`
   - `evaluation_run_summary` (view)
 
-If these RPCs are missing in Supabase, the bot will receive `404 / PGRST202` from `/rest/v1/rpc/...`.
+In Docker, the local PostgreSQL bootstrap runs these scripts automatically on the first startup of the `postgres` service.

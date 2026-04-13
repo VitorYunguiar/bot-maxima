@@ -6,6 +6,7 @@ google-genai>=1.0.0
 
 # Supabase (HTTP client direto - sem dependências pesadas)
 httpx>=0.26.0
+psycopg[binary]>=3.2.0
 
 # Document parsing
 PyPDF2>=3.0.0

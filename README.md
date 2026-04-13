@@ -29,6 +29,9 @@ setup_maquina.bat
 
 Depois preencha o `.env` com as credenciais reais.
 
+Para ambiente Docker, use `DATABASE_URL` apontando para o servico `postgres`
+definido no `docker-compose.yml`.
+
 ## Iniciar
 
 Discord:
@@ -72,6 +75,18 @@ Subida rapida:
 
 ```sh
 docker compose build
+docker compose up -d postgres
+```
+
+Depois da inicializacao do banco, rode a ingestao inicial:
+
+```sh
+docker compose --profile tools run --rm ingest
+```
+
+Com os documentos indexados, suba os bots:
+
+```sh
 docker compose up -d discord_bot teams_bot
 ```
 
@@ -79,12 +94,6 @@ Gerar pacote do Teams:
 
 ```sh
 docker compose --profile tools run --rm teams_package
-```
-
-Ingestao inicial:
-
-```sh
-docker compose --profile tools run --rm ingest
 ```
 
 ## Observacoes de implantacao

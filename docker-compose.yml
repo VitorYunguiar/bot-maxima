@@ -1,4 +1,25 @@
 services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: bot-maxima-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-bot_maxima}
+      POSTGRES_USER: ${POSTGRES_USER:-bot_maxima}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bot_maxima}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./sql:/opt/bot-maxima/sql:ro
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
   discord_bot:
     build:
       context: .
@@ -9,6 +30,9 @@ services:
     env_file:
       - .env
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
     environment:
       FAILED_INGEST_REPORT: /app/runtime/ingest_failures.json
     volumes:
@@ -25,6 +49,9 @@ services:
     env_file:
       - .env
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
     environment:
       FAILED_INGEST_REPORT: /app/runtime/ingest_failures.json
     ports:
@@ -50,6 +77,9 @@ services:
       - .env
     profiles:
       - tools
+    depends_on:
+      postgres:
+        condition: service_healthy
     environment:
       FAILED_INGEST_REPORT: /app/runtime/ingest_failures.json
     volumes:
@@ -69,3 +99,6 @@ services:
       - tools
     volumes:
       - ./teams_manifest/build:/app/teams_manifest/build
+
+volumes:
+  postgres_data:

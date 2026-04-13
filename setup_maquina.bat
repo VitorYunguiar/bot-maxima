@@ -63,8 +63,10 @@ if not exist "documentos" (
 echo.
 echo Setup concluido.
 echo Proximos passos:
-echo  1. Preencha o arquivo .env com as chaves reais.
-echo  2. Para Discord: iniciar.bat
-echo  3. Para Teams: gerar_manifest_teams.bat e iniciar_teams.bat
+echo  1. Preencha o arquivo .env com as chaves reais e a DATABASE_URL.
+echo  2. Em Docker, suba primeiro o servico postgres: docker compose up -d postgres
+echo  3. Rode a ingestao inicial: docker compose --profile tools run --rm ingest
+echo  4. Para Discord: iniciar.bat
+echo  5. Para Teams: gerar_manifest_teams.bat e iniciar_teams.bat
 echo.
 pause

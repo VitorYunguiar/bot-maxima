@@ -25,6 +25,7 @@ from google.genai import types as _gtypes
 
 import config
 from bot_common import normalize_text
+from db import db_call, db_delete, db_insert, db_select, db_update, is_missing_function_error
 
 logger = logging.getLogger(__name__)
 
@@ -600,19 +601,6 @@ def _close_http_client():
         _http_client = None
 
 
-def _supabase_headers() -> dict:
-    return {
-        "apikey": config.SUPABASE_SERVICE_KEY,
-        "Authorization": f"Bearer {config.SUPABASE_SERVICE_KEY}",
-        "Content-Type": "application/json",
-        "Prefer": "return=representation",
-    }
-
-
-def _supabase_url(path: str) -> str:
-    return f"{config.SUPABASE_URL}/rest/v1/{path}"
-
-
 # ── Retry para erros transientes ─────────────────────────
 def _retry_on_transient(fn, max_retries: int = 2, backoff: float = 1.0):
     """Retenta chamadas HTTP em erros transientes (429, 502, 503, 504) com backoff exponencial."""
@@ -635,134 +623,57 @@ def _retry_on_transient(fn, max_retries: int = 2, backoff: float = 1.0):
 
 
 # ── Supabase REST helpers ─────────────────────────────────
-def supabase_insert(table: str, data: dict | list) -> list:
-    """Insere dados via REST API do Supabase."""
-    def _do():
-        resp = _get_http_client().post(
-            _supabase_url(table),
-            headers=_supabase_headers(),
-            json=data,
-            timeout=120,  # insercoes de lotes podem demorar
-        )
-        if resp.status_code >= 400:
-            logger.error(
-                "Supabase INSERT erro %s em %s: %s",
-                resp.status_code,
-                table,
-                resp.text[:2000],
-            )
-        resp.raise_for_status()
-        return resp.json()
-    return _retry_on_transient(_do)
+def db_insert_rows(table: str, data: dict | list) -> list:
+    return db_insert(table, data)
 
 
-def supabase_select(table: str, select: str = "*", filters: dict = None) -> list:
-    params = {"select": select}
-    if filters:
-        for key, value in filters.items():
-            params[key] = value
-
-    def _do():
-        resp = _get_http_client().get(
-            _supabase_url(table),
-            headers=_supabase_headers(),
-            params=params,
-        )
-        if resp.status_code >= 400:
-            logger.error(
-                "Supabase SELECT erro %s em %s: %s",
-                resp.status_code,
-                table,
-                resp.text[:2000],
-            )
-        resp.raise_for_status()
-        return resp.json()
-    return _retry_on_transient(_do)
+def db_select_rows(table: str, select: str = "*", filters: dict = None) -> list:
+    return db_select(table, columns=select, filters=filters)
 
 
-def supabase_delete(table: str, column: str, value: str) -> None:
-    def _do():
-        resp = _get_http_client().delete(
-            _supabase_url(table),
-            headers=_supabase_headers(),
-            params={column: f"eq.{value}"},
-        )
-        if resp.status_code >= 400:
-            logger.error(
-                "Supabase DELETE erro %s em %s.%s=%s: %s",
-                resp.status_code,
-                table,
-                column,
-                value,
-                resp.text[:2000],
-            )
-        resp.raise_for_status()
-    _retry_on_transient(_do)
+def db_delete_rows(table: str, column: str, value: str) -> None:
+    db_delete(table, {column: f"eq.{value}"})
 
 
-def supabase_update(table: str, data: dict, filters: dict) -> list:
-    params = {}
-    for key, value in filters.items():
-        params[key] = value
-
-    def _do():
-        resp = _get_http_client().patch(
-            _supabase_url(table),
-            headers=_supabase_headers(),
-            params=params,
-            json=data,
-        )
-        if resp.status_code >= 400:
-            logger.error(
-                "Supabase UPDATE erro %s em %s: %s",
-                resp.status_code,
-                table,
-                resp.text[:2000],
-            )
-        resp.raise_for_status()
-        return resp.json()
-    return _retry_on_transient(_do)
+def db_update_rows(table: str, data: dict, filters: dict) -> list:
+    return db_update(table, data, filters)
 
 
-def supabase_rpc(function_name: str, params: dict) -> list:
-    def _do():
-        resp = _get_http_client().post(
-            f"{config.SUPABASE_URL}/rest/v1/rpc/{function_name}",
-            headers=_supabase_headers(),
-            json=params,
-        )
-        if resp.status_code >= 400:
-            logger.error(
-                "Supabase RPC erro %s em %s: %s",
-                resp.status_code,
-                function_name,
-                resp.text[:2000],
-            )
-        resp.raise_for_status()
-        # Funcoes SQL RETURNS VOID podem responder 204 sem corpo.
-        if resp.status_code == 204 or not resp.content:
-            return []
-        try:
-            return resp.json()
-        except ValueError:
-            # Evita quebrar o fluxo quando PostgREST devolve sucesso sem JSON valido.
-            logger.warning(
-                "Supabase RPC respondeu sem JSON valido em %s (status=%s).",
-                function_name,
-                resp.status_code,
-            )
-            return []
-    return _retry_on_transient(_do)
+_VOID_DB_FUNCTIONS = {
+    "approve_feedback",
+    "reject_feedback",
+    "upsert_knowledge_gap",
+}
+
+
+def db_call_rows(function_name: str, params: dict, expect_rows: bool = True) -> list:
+    if function_name in _VOID_DB_FUNCTIONS:
+        expect_rows = False
+    return db_call(function_name, params, expect_rows=expect_rows)
 
 
 def _is_missing_rpc_function(error: Exception, function_name: str) -> bool:
-    if not isinstance(error, httpx.HTTPStatusError):
-        return False
-    response = error.response
-    if response is None or response.status_code != 404:
-        return False
-    body = response.text or ""
-    return "PGRST202" in body or function_name in body
+    return is_missing_function_error(error)
+
+
+def supabase_insert(table: str, data: dict | list) -> list:
+    return db_insert_rows(table, data)
+
+
+def supabase_select(table: str, select: str = "*", filters: dict = None) -> list:
+    return db_select_rows(table, select=select, filters=filters)
+
+
+def supabase_delete(table: str, column: str, value: str) -> None:
+    db_delete_rows(table, column, value)
+
+
+def supabase_update(table: str, data: dict, filters: dict) -> list:
+    return db_update_rows(table, data, filters)
+
+
+def supabase_rpc(function_name: str, params: dict) -> list:
+    return db_call_rows(function_name, params)
 
 
 def _safe_similarity(value: float) -> float:
@@ -1290,7 +1201,7 @@ def _search_rpc_with_filter_fallback(function_name: str, params: dict) -> list:
                 if key not in {"filter_doc_types", "filter_modules"}
             }
             logger.warning(
-                "Supabase ainda sem suporte a filtros opcionais em %s; repetindo sem filtros.",
+                "Funcao %s ainda sem suporte a filtros opcionais; repetindo sem filtros.",
                 function_name,
             )
             return _retry_on_transient(lambda: supabase_rpc(function_name, fallback_params))
@@ -2644,7 +2555,7 @@ def log_knowledge_gap(query: str, max_similarity: float, platform: str = "discor
         if _is_missing_rpc_function(e, "upsert_knowledge_gap"):
             if _knowledge_gap_rpc_available is not False:
                 logger.warning(
-                    "RPC upsert_knowledge_gap nao encontrada no Supabase; usando fallback por tabela."
+                    "RPC upsert_knowledge_gap nao encontrada no PostgreSQL; usando fallback por tabela."
                 )
             _knowledge_gap_rpc_available = False
             try:
@@ -2683,7 +2594,7 @@ def get_top_knowledge_gaps(limit: int = 10) -> list[dict]:
         if _is_missing_rpc_function(e, "get_top_knowledge_gaps"):
             if _top_knowledge_gaps_rpc_available is not False:
                 logger.warning(
-                    "RPC get_top_knowledge_gaps nao encontrada no Supabase; usando fallback por tabela."
+                    "RPC get_top_knowledge_gaps nao encontrada no PostgreSQL; usando fallback por tabela."
                 )
             _top_knowledge_gaps_rpc_available = False
             try:

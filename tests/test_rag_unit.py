@@ -2,6 +2,7 @@
 from unittest.mock import patch
 
 import config
+import db
 import rag
 
 
@@ -216,6 +217,17 @@ class TestGroundingFallbackBehavior(unittest.TestCase):
         self.assertTrue(revised_answer.startswith(config.NO_ANSWER_PHRASE))
         self.assertEqual(errors, critical_error)
         self.assertEqual(attempts, 0)
+
+
+class TestDatabaseValidation(unittest.TestCase):
+    def test_validate_database_accepts_env_url(self):
+        with patch.dict("os.environ", {"DATABASE_URL": "postgresql://bot_maxima:bot_maxima@localhost:5432/bot_maxima"}):
+            db.validate_database_config()
+
+    def test_validate_database_rejects_missing_env_url(self):
+        with patch.dict("os.environ", {}, clear=True):
+            with self.assertRaises(EnvironmentError):
+                db.validate_database_config()
 
 
 if __name__ == "__main__":

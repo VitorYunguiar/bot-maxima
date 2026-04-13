@@ -14,6 +14,7 @@ import discord
 from discord.ext import commands
 
 import config
+from db import validate_database_config
 import rag
 from bot_common import ConversationManager, split_message
 from ingest import ingest_directory
@@ -716,5 +717,6 @@ async def on_command_error(ctx: commands.Context, error):
 
 if __name__ == "__main__":
     config.validate()
+    validate_database_config()
     logger.info("Iniciando bot...")
     bot.run(config.DISCORD_TOKEN)

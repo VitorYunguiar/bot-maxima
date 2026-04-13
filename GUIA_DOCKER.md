@@ -46,9 +46,8 @@ Preencha no minimo:
 - LLM/embeddings:
   - `LLM_PROVIDER`
   - `OPENAI_API_KEY` ou `GEMINI_API_KEY`
-- Supabase:
-  - `SUPABASE_URL`
-  - `SUPABASE_SERVICE_KEY`
+- Banco:
+  - `DATABASE_URL`
 - Teams:
   - `TEAMS_APP_ID`
   - `TEAMS_APP_PASSWORD`
@@ -70,15 +69,31 @@ O compose monta essa pasta em modo leitura dentro dos containers:
 docker compose build
 ```
 
-## 6. Ingestao inicial
+## 6. Subir o PostgreSQL local
 
-Se voce precisa indexar os documentos da pasta local no banco vetorial:
+O servico `postgres` cria extensoes, tabelas e funcoes automaticamente
+na primeira inicializacao, usando os scripts da pasta `sql/` na ordem
+definida pelo bootstrap do container.
+
+```sh
+docker compose up -d postgres
+```
+
+Para acompanhar a inicializacao:
+
+```sh
+docker compose logs -f postgres
+```
+
+## 7. Ingestao inicial
+
+Depois que o `postgres` estiver saudavel, indexe os documentos da pasta local no banco vetorial:
 
 ```sh
 docker compose --profile tools run --rm ingest
 ```
 
-## 7. Gerar o pacote do Teams
+## 8. Gerar o pacote do Teams
 
 ```sh
 docker compose --profile tools run --rm teams_package
@@ -89,7 +104,7 @@ Arquivos gerados:
 - `teams_manifest/build/manifest.json`
 - `teams_manifest/build/bot-azure.zip`
 
-## 8. Subir os bots
+## 9. Subir os bots
 
 Discord + Teams:
 
@@ -109,7 +124,7 @@ So Teams:
 docker compose up -d teams_bot
 ```
 
-## 9. Ver logs
+## 10. Ver logs
 
 Discord:
 
@@ -123,7 +138,7 @@ Teams:
 docker compose logs -f teams_bot
 ```
 
-## 10. Testar o bot do Teams
+## 11. Testar o bot do Teams
 
 Healthcheck local:
 
@@ -145,13 +160,13 @@ https://SEU-DOMINIO-Ou-REVERSE-PROXY/api/messages
 
 Se voce publicar direto da maquina com NAT/reverse proxy corporativo, a TI precisa expor a porta 3978 com HTTPS.
 
-## 11. Parar tudo
+## 12. Parar tudo
 
 ```sh
 docker compose down
 ```
 
-## 12. Atualizar o projeto
+## 13. Atualizar o projeto
 
 ```sh
 git pull
@@ -162,5 +177,6 @@ docker compose up -d discord_bot teams_bot
 ## Observacoes
 
 - `runtime/` guarda o `ingest_failures.json` persistido fora do container
+- `postgres_data` guarda o banco local em volume nomeado
 - `documentos/` nao vai para a imagem; ele e montado como volume
 - o Docker reduz variacao de ambiente, mas nao impede totalmente que um admin do host inspecione a imagem

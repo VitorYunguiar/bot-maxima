@@ -107,7 +107,7 @@ class TestCorrectionWorkflowIntegration(unittest.TestCase):
             "feedback_chunks": {},
         }
 
-        def fake_supabase_rpc(function_name, params):
+        def fake_db_call(function_name, params, expect_rows=True):
             if function_name == "submit_feedback":
                 feedback_id = str(uuid.uuid4())
                 state["feedback_items"][feedback_id] = {
@@ -171,7 +171,7 @@ class TestCorrectionWorkflowIntegration(unittest.TestCase):
 
             raise AssertionError(f"Unexpected RPC call: {function_name}")
 
-        def fake_supabase_select(table, select="*", filters=None):
+        def fake_db_select(table, select="*", filters=None):
             if table == "feedback_items":
                 filters = filters or {}
                 raw_id = str(filters.get("id", ""))
@@ -181,8 +181,8 @@ class TestCorrectionWorkflowIntegration(unittest.TestCase):
                     return [copy.deepcopy(item)] if item else []
             return []
 
-        with patch("rag.supabase_rpc", side_effect=fake_supabase_rpc), patch(
-            "rag.supabase_select", side_effect=fake_supabase_select
+        with patch("rag.db_call_rows", side_effect=fake_db_call), patch(
+            "rag.db_select_rows", side_effect=fake_db_select
         ), patch("rag.create_document_embedding", return_value=[0.01] * 1536), patch(
             "rag._get_cached_query_embedding", return_value=[0.01] * 1536
         ):

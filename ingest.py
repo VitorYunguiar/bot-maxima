@@ -1,6 +1,6 @@
 """
 ingest.py - Ingestao de documentos: le arquivos, faz chunking (MARKDOWN),
-gera embeddings e salva no Supabase.
+gera embeddings e salva no PostgreSQL.
 
 PDFs sao convertidos para Markdown externamente via DeepSeek.
 Para PDFs nao-convertidos, usa PyPDF2 como fallback basico.
@@ -33,20 +33,33 @@ from langchain_text_splitters import MarkdownTextSplitter
 
 import config
 from bot_common import normalize_text
+from db import db_delete, db_insert, db_select, db_update, validate_database_config
 from rag import (
     QUERY_MODULE_HINTS,
     create_document_embeddings,
     embedding_to_pgvector,
     get_model_config,
-    supabase_delete,
-    supabase_insert,
-    supabase_select,
-    supabase_update,
 )
 
 logger = logging.getLogger(__name__)
 _last_embed_call_at = 0.0
 _http_client: httpx.Client | None = None
+
+
+def supabase_delete(table: str, column: str, value: str) -> None:
+    db_delete(table, {column: f"eq.{value}"})
+
+
+def supabase_insert(table: str, data: dict | list) -> list:
+    return db_insert(table, data)
+
+
+def supabase_select(table: str, select: str = "*", filters: dict | None = None) -> list:
+    return db_select(table, columns=select, filters=filters)
+
+
+def supabase_update(table: str, data: dict, filters: dict) -> list:
+    return db_update(table, data, filters)
 
 # --- NOVAS FUNÇÕES DE LEITURA ---
 
@@ -1590,6 +1603,7 @@ def _parse_args() -> argparse.Namespace:
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+    validate_database_config()
     args = _parse_args()
 
     urls = list(args.url or [])

@@ -32,6 +32,7 @@ from botbuilder.core import (
 from botbuilder.schema import Activity, ActivityTypes
 
 import config
+from db import validate_database_config
 import rag
 from bot_common import ConversationManager, split_message
 
@@ -492,6 +493,7 @@ def init_app() -> web.Application:
 
 if __name__ == "__main__":
     config.validate(platform="teams")
+    validate_database_config()
 
     app = init_app()
 
