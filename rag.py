@@ -869,10 +869,22 @@ def _summarize_chunks_for_trace(chunks: list[dict]) -> dict[str, Any]:
         for chunk in safe_chunks
         if chunk.get("filename")
     ]
+    section_ids = {
+        str(chunk.get("section_id"))
+        for chunk in safe_chunks
+        if chunk.get("section_id")
+    }
+    document_ids = {
+        str(chunk.get("document_id") or chunk.get("filename") or "")
+        for chunk in safe_chunks
+        if chunk.get("document_id") or chunk.get("filename")
+    }
     return {
         "top_similarity": top_similarity,
         "retrieved_chunk_count": len(safe_chunks),
         "retrieved_sources": sorted(set(filenames)),
+        "retrieved_section_count": len(section_ids),
+        "retrieved_document_count": len(document_ids),
     }
 
 
@@ -896,6 +908,10 @@ def get_model_config() -> dict[str, str]:
         "contextual_model": _resolve_text_model(
             config.CONTEXTUAL_RETRIEVAL_MODEL,
             purpose="contextual",
+        ),
+        "reranker_model": _resolve_text_model(
+            config.RERANKER_MODEL,
+            purpose="reformulation",
         ),
         "embedding_model": _resolve_embedding_model(),
     }
@@ -1193,15 +1209,21 @@ def _search_rpc_with_filter_fallback(function_name: str, params: dict) -> list:
     try:
         return _retry_on_transient(lambda: supabase_rpc(function_name, params))
     except Exception as e:
-        has_filters = "filter_doc_types" in params or "filter_modules" in params
-        if has_filters and _is_missing_rpc_function(e, function_name):
+        extra_params = {
+            "filter_doc_types",
+            "filter_modules",
+            "filter_section_ids",
+            "fetch_limit",
+        }
+        has_optional_params = any(key in params for key in extra_params)
+        if has_optional_params and _is_missing_rpc_function(e, function_name):
             fallback_params = {
                 key: value
                 for key, value in params.items()
-                if key not in {"filter_doc_types", "filter_modules"}
+                if key not in extra_params
             }
             logger.warning(
-                "Funcao %s ainda sem suporte a filtros opcionais; repetindo sem filtros.",
+                "Funcao %s ainda sem suporte a filtros/argumentos opcionais; repetindo sem eles.",
                 function_name,
             )
             return _retry_on_transient(lambda: supabase_rpc(function_name, fallback_params))
@@ -1328,6 +1350,8 @@ def _postprocess_search_results(
     chunks: list[dict],
     max_results: int,
     threshold: float,
+    *,
+    max_candidates: int | None = None,
 ) -> list[dict]:
     if not chunks:
         return []
@@ -1343,7 +1367,7 @@ def _postprocess_search_results(
         reverse=True,
     )
 
-    max_with_neighbors = max(1, max_results * 2)
+    max_with_neighbors = max(1, int(max_candidates or (max_results * 2)))
     if len(filtered) > max_with_neighbors:
         filtered = filtered[:max_with_neighbors]
 
@@ -1351,16 +1375,151 @@ def _postprocess_search_results(
 
 
 # ── Busca semantica (hibrida: vetor + full-text) ─────────
-def search_similar_chunks(
+def _section_ids_from_hits(section_hits: list[dict], limit: int | None = None) -> list[str]:
+    seen: set[str] = set()
+    section_ids: list[str] = []
+    for section in section_hits:
+        section_id = str(section.get("id") or "").strip()
+        if not section_id or section_id in seen:
+            continue
+        seen.add(section_id)
+        section_ids.append(section_id)
+        if limit is not None and len(section_ids) >= limit:
+            break
+    return section_ids
+
+
+def _limit_chunk_diversity(
+    chunks: list[dict],
+    *,
+    max_per_section: int | None = None,
+    max_per_document: int | None = None,
+    top_limit: int | None = None,
+) -> list[dict]:
+    if not chunks:
+        return []
+
+    section_cap = max(1, int(max_per_section or config.MAX_CHUNKS_PER_SECTION))
+    document_cap = max(section_cap, int(max_per_document or config.MAX_CHUNKS_PER_DOCUMENT))
+    diversified: list[dict] = []
+    section_counts: dict[str, int] = {}
+    document_counts: dict[str, int] = {}
+
+    for chunk in chunks:
+        document_key = str(chunk.get("document_id") or chunk.get("filename") or "desconhecido")
+        section_value = chunk.get("section_id")
+        section_key = str(section_value).strip() if section_value else ""
+
+        if section_key and section_counts.get(section_key, 0) >= section_cap:
+            continue
+        if document_counts.get(document_key, 0) >= document_cap:
+            continue
+
+        diversified.append(chunk)
+        document_counts[document_key] = document_counts.get(document_key, 0) + 1
+        if section_key:
+            section_counts[section_key] = section_counts.get(section_key, 0) + 1
+
+        if top_limit is not None and len(diversified) >= top_limit:
+            break
+
+    return diversified
+
+
+def _should_rerank_chunks(chunks: list[dict]) -> bool:
+    if not config.RAG_ENABLE_RERANKING:
+        return False
+    if not chunks or len(chunks) <= 2:
+        return False
+
+    top_sim = _safe_similarity(chunks[0].get("similarity", 0))
+    if top_sim < config.RERANKER_MIN_TRIGGER_SIM:
+        return False
+    if top_sim > config.RERANKER_MAX_TRIGGER_SIM:
+        return False
+
+    distinct_docs = {
+        str(chunk.get("document_id") or chunk.get("filename") or "")
+        for chunk in chunks
+        if chunk.get("document_id") or chunk.get("filename")
+    }
+    distinct_sections = {
+        str(chunk.get("section_id"))
+        for chunk in chunks
+        if chunk.get("section_id")
+    }
+    return len(distinct_docs) > 1 or len(distinct_sections) > 1 or len(chunks) >= 4
+
+
+def search_relevant_sections(
     query: str,
     max_results: int = None,
     threshold: float = None,
     query_plan: dict | None = None,
 ) -> list[dict]:
+    if not config.SECTION_RETRIEVAL_ENABLED:
+        return []
+    if max_results is None:
+        max_results = config.SECTION_MATCH_COUNT
+    if threshold is None:
+        threshold = config.SIMILARITY_THRESHOLD
+
+    query_for_embedding, query_for_fts = _preprocess_query(query)
+    query_embedding = _get_cached_query_embedding(query_for_embedding)
+    doc_types_filter, module_filter = _build_search_filters(query_plan)
+    rpc_params: dict[str, Any] = {
+        "query_embedding": embedding_to_pgvector(query_embedding),
+        "query_text": query_for_fts,
+        "match_count": max_results,
+        "match_threshold": threshold,
+        "fetch_limit": max(max_results, int(config.SECTION_FETCH_LIMIT)),
+    }
+    if doc_types_filter:
+        rpc_params["filter_doc_types"] = doc_types_filter
+    if module_filter:
+        rpc_params["filter_modules"] = module_filter
+
+    try:
+        result = _search_rpc_with_filter_fallback("hybrid_match_sections", rpc_params)
+    except Exception as e:
+        if _is_missing_rpc_function(e, "hybrid_match_sections"):
+            logger.warning(
+                "RPC hybrid_match_sections nao encontrada; seguindo com retrieval direto por chunks."
+            )
+            return []
+        logger.warning("Busca por secoes falhou: %s", e)
+        return []
+
+    if not result:
+        return []
+
+    processed = _postprocess_search_results(
+        result,
+        max_results,
+        threshold,
+        max_candidates=max(max_results, int(config.SECTION_FETCH_LIMIT)),
+    )
+    logger.info(
+        "Busca por secoes: %d secoes candidatas para '%s'",
+        len(processed),
+        query[:80],
+    )
+    return processed
+
+
+def search_similar_chunks(
+    query: str,
+    max_results: int = None,
+    threshold: float = None,
+    query_plan: dict | None = None,
+    section_ids: list[str] | None = None,
+    candidate_limit: int | None = None,
+) -> list[dict]:
     if max_results is None:
         max_results = config.MAX_CONTEXT_CHUNKS
     if threshold is None:
         threshold = config.SIMILARITY_THRESHOLD
+    fetch_limit = max(max_results, int(candidate_limit or config.CHUNK_FETCH_LIMIT))
 
     query_for_embedding, query_for_fts = _preprocess_query(query)
     query_embedding = _get_cached_query_embedding(query_for_embedding)
@@ -1370,18 +1529,22 @@ def search_similar_chunks(
         "query_text": query_for_fts,
         "match_count": max_results,
         "match_threshold": threshold,
+        "fetch_limit": fetch_limit,
     }
     if doc_types_filter:
         rpc_params["filter_doc_types"] = doc_types_filter
     if module_filter:
         rpc_params["filter_modules"] = module_filter
+    if section_ids:
+        rpc_params["filter_section_ids"] = section_ids
 
-    if query_plan and (doc_types_filter or module_filter):
+    if query_plan and (doc_types_filter or module_filter or section_ids):
         logger.info(
-            "Roteamento de busca: intent=%s doc_types=%s modules=%s",
+            "Roteamento de busca: intent=%s doc_types=%s modules=%s sections=%d",
             query_plan.get("intent", "general"),
             doc_types_filter or [],
             module_filter or [],
+            len(section_ids or []),
         )
 
     # Tentar busca hibrida primeiro (vetor + full-text com RRF)
@@ -1391,7 +1554,12 @@ def search_similar_chunks(
             rpc_params,
         )
         if result:
-            result = _postprocess_search_results(result, max_results, threshold)
+            result = _postprocess_search_results(
+                result,
+                max_results,
+                threshold,
+                max_candidates=fetch_limit,
+            )
         if result:
             logger.info(
                 "Busca hibrida: %d chunks encontrados para '%s'",
@@ -1413,18 +1581,26 @@ def search_similar_chunks(
         "query_embedding": rpc_params["query_embedding"],
         "match_count": max_results,
         "match_threshold": threshold,
+        "fetch_limit": fetch_limit,
     }
     if doc_types_filter:
         vector_params["filter_doc_types"] = doc_types_filter
     if module_filter:
         vector_params["filter_modules"] = module_filter
+    if section_ids:
+        vector_params["filter_section_ids"] = section_ids
 
     result = _search_rpc_with_filter_fallback(
         "match_chunks",
         vector_params,
     )
     if result:
-        result = _postprocess_search_results(result, max_results, threshold)
+        result = _postprocess_search_results(
+            result,
+            max_results,
+            threshold,
+            max_candidates=fetch_limit,
+        )
 
     if result:
         logger.info(
@@ -1442,7 +1618,7 @@ def search_similar_chunks(
     final_result = result or []
 
     # P0.3: Se a busca filtrada retornou poucos resultados, complementar sem filtro de modulo
-    if module_filter and len(final_result) < max(1, max_results // 3):
+    if module_filter and not section_ids and len(final_result) < max(1, max_results // 3):
         logger.info(
             "Busca filtrada retornou poucos resultados (%d/%d); "
             "complementando com busca sem filtro de modulo.",
@@ -1455,13 +1631,19 @@ def search_similar_chunks(
             "query_text": query_for_fts,
             "match_count": max_results,
             "match_threshold": threshold,
+            "fetch_limit": fetch_limit,
         }
         if doc_types_filter:
             unfiltered_params["filter_doc_types"] = doc_types_filter
         try:
             extra = _search_rpc_with_filter_fallback("hybrid_match_chunks", unfiltered_params)
             if extra:
-                extra = _postprocess_search_results(extra, max_results, threshold)
+                extra = _postprocess_search_results(
+                    extra,
+                    max_results,
+                    threshold,
+                    max_candidates=fetch_limit,
+                )
                 for chunk in extra:
                     if chunk.get("id") not in found_ids:
                         final_result.append(chunk)
@@ -1470,7 +1652,7 @@ def search_similar_chunks(
                     key=lambda c: _safe_similarity(c.get("similarity", 0)),
                     reverse=True,
                 )
-                max_with_neighbors = max(1, max_results * 2)
+                max_with_neighbors = max(1, fetch_limit)
                 if len(final_result) > max_with_neighbors:
                     final_result = final_result[:max_with_neighbors]
                 logger.info(
@@ -1601,7 +1783,34 @@ def retrieve_chunks_with_feedback(
         scope_level="global",
     )
 
-    kb_chunks = search_similar_chunks(query, query_plan=query_plan)
+    section_hits = search_relevant_sections(
+        query,
+        query_plan=query_plan,
+        max_results=config.SECTION_MATCH_COUNT,
+    )
+    section_scope_ids = _section_ids_from_hits(section_hits, limit=config.SECTION_MATCH_COUNT)
+    kb_chunks: list[dict] = []
+
+    if section_scope_ids:
+        kb_chunks = search_similar_chunks(
+            query,
+            query_plan=query_plan,
+            section_ids=section_scope_ids,
+            candidate_limit=config.CHUNK_FETCH_LIMIT,
+        )
+
+    best_section_similarity = max(
+        (_safe_similarity(section.get("similarity", 0.0)) for section in section_hits),
+        default=0.0,
+    )
+    if not kb_chunks or best_section_similarity < (config.SIMILARITY_THRESHOLD * config.SIMILARITY_FLOOR_FACTOR):
+        fallback_chunks = search_similar_chunks(
+            query,
+            query_plan=query_plan,
+            candidate_limit=config.CHUNK_FETCH_LIMIT,
+        )
+        kb_chunks = _dedupe_chunks(kb_chunks + fallback_chunks)
+
     merged = _dedupe_chunks(scoped_feedback + global_feedback + kb_chunks)
     return merged, scoped_feedback, kb_chunks
 
@@ -1756,6 +1965,14 @@ def build_context(chunks: list[dict]) -> str:
     if not chunks:
         return ""
 
+    chunks = _limit_chunk_diversity(
+        chunks,
+        max_per_section=config.MAX_CHUNKS_PER_SECTION,
+        max_per_document=config.MAX_CHUNKS_PER_DOCUMENT,
+    )
+    if not chunks:
+        return ""
+
     chunks_by_doc: dict[str, list[dict]] = {}
     for chunk in chunks:
         doc_key = str(chunk.get("document_id") or chunk.get("filename") or "desconhecido")
@@ -1782,10 +1999,11 @@ def build_context(chunks: list[dict]) -> str:
         doc_priority = 5  # default
         source_kind = "kb"
         for c in sorted_doc_chunks:
+            chunk_priority = c.get("doc_priority")
             meta = c.get("metadata") or {}
             if not isinstance(meta, dict):
-                continue
-            p = meta.get("doc_priority")
+                meta = {}
+            p = chunk_priority if chunk_priority is not None else meta.get("doc_priority")
             sk = str(meta.get("source_kind") or "").strip().lower()
             if sk:
                 source_kind = sk
@@ -1963,6 +2181,97 @@ def _rerank_chunks_with_llm(
             # Adicionar chunks alem dos candidatos ao final
             if len(chunks) > candidate_count:
                 reranked.extend(chunks[candidate_count:])
+            logger.info("Re-ranking LLM aplicado: %d chunks reordenados", len(indices))
+            return reranked
+
+    except Exception as e:
+        logger.warning("Erro no re-ranking LLM: %s", e)
+
+    return chunks
+
+
+def _rerank_chunks_with_llm(
+    query: str,
+    chunks: list[dict],
+    top_n: int | None = None,
+) -> list[dict]:
+    """Re-ranking seletivo para zona cinzenta, com diversidade antes do LLM."""
+    if not chunks or len(chunks) <= 2:
+        return chunks
+    if not _should_rerank_chunks(chunks):
+        logger.info(
+            "Re-ranking LLM pulado: fora da zona cinzenta configurada (top_similarity=%.3f).",
+            _safe_similarity(chunks[0].get("similarity", 0)),
+        )
+        return chunks
+
+    if top_n is None:
+        top_n = config.MAX_CONTEXT_CHUNKS
+
+    diversified_candidates = _limit_chunk_diversity(
+        chunks,
+        max_per_section=max(1, config.MAX_CHUNKS_PER_SECTION),
+        max_per_document=max(2, config.MAX_CHUNKS_PER_DOCUMENT),
+        top_limit=max(int(config.RERANKER_MAX_CANDIDATES), top_n * 2),
+    )
+    candidate_count = max(2, min(int(config.RERANKER_MAX_CANDIDATES), len(diversified_candidates)))
+    candidates = diversified_candidates[:candidate_count]
+    chunk_summaries: list[str] = []
+    for i, chunk in enumerate(candidates):
+        content = (chunk.get("content") or "")[:500].rsplit(" ", 1)[0]
+        filename = chunk.get("filename", "")
+        heading_path = str(_chunk_analytical_value(chunk, "heading_path", "") or "").strip()
+        answer_mode = str(_chunk_analytical_value(chunk, "answer_mode", "") or "").strip()
+        entities = _format_entities_for_context(_merge_chunk_entities([chunk]))
+        meta_parts = [filename]
+        if heading_path:
+            meta_parts.append(heading_path)
+        if answer_mode and answer_mode != "general":
+            meta_parts.append(f"modo={answer_mode}")
+        if entities:
+            meta_parts.append(entities.replace("\n", " | "))
+        header = " | ".join(part for part in meta_parts if part)
+        chunk_summaries.append(f"[{i}] ({header}) {content}")
+
+    summaries_text = "\n---\n".join(chunk_summaries)
+
+    try:
+        response = _gemini_generate(
+            model=config.RERANKER_MODEL,
+            max_tokens=200,
+            system=(
+                "Voce e um ranqueador de documentacao tecnica do ERP maxPedido (Maxima Sistemas). "
+                "Dada uma pergunta de suporte N1 e trechos da base de conhecimento, retorne os indices "
+                "dos trechos mais relevantes para responder a pergunta, do mais relevante ao menos. "
+                "Prefira trechos com passos especificos, consultas SQL completas, nomes de "
+                "campo/tela/parametro e resolucoes de erro em vez de trechos introdutorios ou genericos. "
+                "Retorne APENAS os numeros separados por virgula. Exemplo: 3,0,7,1"
+            ),
+            contents=f"Pergunta: {query}\n\nTrechos:\n{summaries_text}",
+        )
+
+        ranking_text = response.text.strip()
+        indices: list[int] = []
+        for part in ranking_text.replace(" ", "").split(","):
+            try:
+                idx = int(part)
+                if 0 <= idx < len(candidates) and idx not in indices:
+                    indices.append(idx)
+            except ValueError:
+                continue
+
+        if indices:
+            reranked = [candidates[i] for i in indices]
+            seen = set(indices)
+            for i, chunk in enumerate(candidates):
+                if i not in seen:
+                    reranked.append(chunk)
+            reranked_ids = {chunk.get("id") for chunk in reranked if chunk.get("id") is not None}
+            for chunk in chunks:
+                chunk_id = chunk.get("id")
+                if chunk_id is not None and chunk_id in reranked_ids:
+                    continue
+                reranked.append(chunk)
             logger.info("Re-ranking LLM aplicado: %d chunks reordenados", len(indices))
             return reranked
 
@@ -2287,9 +2596,15 @@ def ask(
         "cited_files": [],
         "grounding_errors": [],
         "regeneration_attempts": 0,
+        "stage_timings_ms": {},
     }
 
+    def _mark_stage(stage_name: str, started_at: float) -> None:
+        trace["stage_timings_ms"][stage_name] = int((_time.monotonic() - started_at) * 1000)
+
+    stage_started_at = _time.monotonic()
     search_query = _reformulate_query_with_history(question, conversation_history)
+    _mark_stage("reformulation", stage_started_at)
     base_system = system_prompt or config.SYSTEM_PROMPT
 
     if config.FULL_CONTEXT_ENABLED:
@@ -2311,17 +2626,21 @@ def ask(
             trace["latency_ms"] = int((_time.monotonic() - t0) * 1000)
             _log_ask_trace(trace)
             return answer, chunks, trace
+        stage_started_at = _time.monotonic()
         answer = _ask_model(
             question=question,
             system=system,
             conversation_history=conversation_history,
             images=images,
         )
+        _mark_stage("generation", stage_started_at)
         trace["latency_ms"] = int((_time.monotonic() - t0) * 1000)
         _log_ask_trace(trace)
         return answer, chunks, trace
 
+    stage_started_at = _time.monotonic()
     query_plan = _classify_query_intent(search_query)
+    _mark_stage("intent_routing", stage_started_at)
     trace["query_plan"] = query_plan
     logger.info(
         "Roteamento da pergunta: query_id=%s intent=%s modules=%s doc_types=%s",
@@ -2331,13 +2650,22 @@ def ask(
         query_plan.get("doc_types", []),
     )
 
+    stage_started_at = _time.monotonic()
     merged_chunks, scoped_feedback_chunks, kb_chunks = retrieve_chunks_with_feedback(
         search_query,
         query_plan=query_plan,
         scope=scope,
     )
+    _mark_stage("retrieval", stage_started_at)
 
-    chunks = _rerank_chunks_with_llm(search_query, merged_chunks)[:config.MAX_CONTEXT_CHUNKS]
+    stage_started_at = _time.monotonic()
+    chunks = _limit_chunk_diversity(
+        _rerank_chunks_with_llm(search_query, merged_chunks),
+        max_per_section=config.MAX_CHUNKS_PER_SECTION,
+        max_per_document=config.MAX_CHUNKS_PER_DOCUMENT,
+        top_limit=config.MAX_CONTEXT_CHUNKS,
+    )[:config.MAX_CONTEXT_CHUNKS]
+    _mark_stage("rerank", stage_started_at)
     chunk_stats = _summarize_chunks_for_trace(chunks)
     trace.update(chunk_stats)
     trace["confidence"] = trace.get("top_similarity", 0.0)
@@ -2378,7 +2706,12 @@ def ask(
             scope=scope,
         )
         combined_chunks = _dedupe_chunks(chunks + broad_merged)
-        fallback_chunks = _rerank_chunks_with_llm(search_query, combined_chunks)[:config.MAX_CONTEXT_CHUNKS]
+        fallback_chunks = _limit_chunk_diversity(
+            _rerank_chunks_with_llm(search_query, combined_chunks),
+            max_per_section=config.MAX_CHUNKS_PER_SECTION,
+            max_per_document=config.MAX_CHUNKS_PER_DOCUMENT,
+            top_limit=config.MAX_CONTEXT_CHUNKS,
+        )[:config.MAX_CONTEXT_CHUNKS]
         fallback_stats = _summarize_chunks_for_trace(fallback_chunks)
         improved = (
             fallback_stats.get("top_similarity", 0.0) > trace.get("top_similarity", 0.0)
@@ -2406,7 +2739,9 @@ def ask(
         _log_ask_trace(trace)
         return answer, chunks, trace
 
+    stage_started_at = _time.monotonic()
     context = build_context(chunks)
+    _mark_stage("context_build", stage_started_at)
     business_rules = _load_business_rules_context()
     intent_instruction = _intent_response_instruction(query_plan)
     allowed_sources = {_normalize_source_name(s) for s in trace.get("retrieved_sources", [])}
@@ -2444,9 +2779,9 @@ def ask(
         system += (
             "\n\n<analysis_policy>\n"
             "Responda como um analista junior de suporte tecnico: conecte evidencias do contexto, "
-            "explique o impacto operacional e proponha a proxima verificacao quando houver base para isso. "
-            "Separe claramente o que esta documentado do que for analise provavel. "
-            "Use expressoes como 'Pela documentacao' para fatos e 'Analise provavel' para inferencias. "
+            "explique o impacto operacional e proponha a proxima verificacao apenas quando ela estiver suportada pelo contexto. "
+            "Use expressoes como 'Pela documentacao' para fatos. "
+            "Nao faca inferencias fora do texto recuperado, mesmo quando o bloco analytical_context resumir a secao. "
             "Nao invente campos, telas, parametros, SQL ou procedimentos ausentes nas fontes recuperadas.\n"
             "</analysis_policy>"
         )
@@ -2478,13 +2813,16 @@ def ask(
     if allowed_sources:
         system += f"\n\n<allowed_sources>{', '.join(sorted(allowed_sources))}</allowed_sources>"
 
+    stage_started_at = _time.monotonic()
     answer = _ask_model(
         question=question,
         system=system,
         conversation_history=conversation_history,
         images=images,
     )
+    _mark_stage("generation", stage_started_at)
 
+    stage_started_at = _time.monotonic()
     answer, grounding_errors, cited_sources, regen_attempts = _apply_grounding_regeneration(
         answer=answer,
         question=question,
@@ -2494,6 +2832,7 @@ def ask(
         allowed_sources=allowed_sources,
         source_display_map=source_display_map,
     )
+    _mark_stage("grounding", stage_started_at)
     trace["grounding_errors"] = grounding_errors
     trace["cited_files"] = sorted(cited_sources)
     trace["citations"] = sorted(cited_sources)

@@ -1,5 +1,5 @@
 """
-db.py - Acesso direto ao PostgreSQL via psycopg.
+db.py - Acesso direto ao PostgreSQL via psycopg com pool opcional.
 """
 
 from __future__ import annotations
@@ -9,6 +9,7 @@ import logging
 import os
 import re
 from collections.abc import Iterable
+from contextlib import contextmanager
 from typing import Any
 
 import config
@@ -22,18 +23,25 @@ except ImportError:  # pragma: no cover - coberto indiretamente pelo fallback de
     dict_row = None
     Jsonb = None
 
+try:
+    from psycopg_pool import ConnectionPool
+except ImportError:  # pragma: no cover - fallback para conexoes diretas
+    ConnectionPool = None
+
 logger = logging.getLogger(__name__)
 
-_connection = None
+_pool = None
 
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _ARRAY_PARAM_NAMES = {
     "filter_doc_types",
     "filter_modules",
+    "filter_section_ids",
     "feedback_item_ids",
     "base_sources",
     "p_feedback_item_ids",
     "p_base_sources",
+    "p_section_ids",
 }
 
 
@@ -61,7 +69,7 @@ def _normalize_json_value(field_name: str, value: Any) -> Any:
 
 
 def _placeholder(field_name: str) -> str:
-    if field_name in {"feedback_item_ids", "p_feedback_item_ids"}:
+    if field_name in {"feedback_item_ids", "p_feedback_item_ids", "filter_section_ids", "p_section_ids"}:
         return "%s::uuid[]"
     if "embedding" in field_name.lower():
         return "%s::vector"
@@ -70,42 +78,6 @@ def _placeholder(field_name: str) -> str:
 
 def _prepare_value(field_name: str, value: Any) -> Any:
     return _normalize_json_value(field_name, value)
-
-
-def _get_connection():
-    global _connection
-
-    if psycopg is None:
-        raise RuntimeError(
-            "psycopg nao esta instalado. Instale as dependencias do projeto antes de usar o banco."
-        )
-
-    database_url = get_database_url()
-    if not database_url:
-        raise RuntimeError("DATABASE_URL nao configurada.")
-
-    if _connection is None or getattr(_connection, "closed", False):
-        _connection = psycopg.connect(
-            database_url,
-            autocommit=True,
-            row_factory=dict_row,
-        )
-    return _connection
-
-
-def close_connection() -> None:
-    global _connection
-    if _connection is None:
-        return
-    try:
-        _connection.close()
-    except Exception:
-        logger.debug("Erro ao fechar conexao com PostgreSQL.", exc_info=True)
-    finally:
-        _connection = None
-
-
-atexit.register(close_connection)
 
 
 def get_database_url() -> str | None:
@@ -117,6 +89,123 @@ def validate_database_config() -> None:
         raise EnvironmentError(
             "Variavel de ambiente obrigatoria nao definida: DATABASE_URL. Verifique seu arquivo .env"
         )
+
+
+def _connection_options() -> str:
+    options: list[str] = []
+    timeouts = (
+        ("statement_timeout", config.DB_STATEMENT_TIMEOUT_MS),
+        ("lock_timeout", config.DB_LOCK_TIMEOUT_MS),
+        (
+            "idle_in_transaction_session_timeout",
+            config.DB_IDLE_IN_TRANSACTION_TIMEOUT_MS,
+        ),
+    )
+    for name, raw_value in timeouts:
+        try:
+            value = int(raw_value)
+        except (TypeError, ValueError):
+            value = 0
+        if value > 0:
+            options.append(f"-c {name}={value}")
+    return " ".join(options)
+
+
+def _connect_kwargs(*, autocommit: bool) -> dict[str, Any]:
+    kwargs: dict[str, Any] = {"autocommit": autocommit}
+    if dict_row is not None:
+        kwargs["row_factory"] = dict_row
+    if config.DB_APPLICATION_NAME:
+        kwargs["application_name"] = config.DB_APPLICATION_NAME
+    options = _connection_options()
+    if options:
+        kwargs["options"] = options
+    return kwargs
+
+
+def _create_direct_connection(*, autocommit: bool):
+    if psycopg is None:
+        raise RuntimeError(
+            "psycopg nao esta instalado. Instale as dependencias do projeto antes de usar o banco."
+        )
+
+    database_url = get_database_url()
+    if not database_url:
+        raise RuntimeError("DATABASE_URL nao configurada.")
+
+    return psycopg.connect(database_url, **_connect_kwargs(autocommit=autocommit))
+
+
+def _get_pool():
+    global _pool
+
+    if ConnectionPool is None:
+        return None
+    if psycopg is None:
+        raise RuntimeError(
+            "psycopg nao esta instalado. Instale as dependencias do projeto antes de usar o banco."
+        )
+
+    database_url = get_database_url()
+    if not database_url:
+        raise RuntimeError("DATABASE_URL nao configurada.")
+
+    if _pool is None:
+        min_size = max(1, int(config.DB_POOL_MIN_SIZE))
+        max_size = max(min_size, int(config.DB_POOL_MAX_SIZE))
+        _pool = ConnectionPool(
+            conninfo=database_url,
+            min_size=min_size,
+            max_size=max_size,
+            timeout=float(config.DB_POOL_TIMEOUT_SECONDS),
+            kwargs=_connect_kwargs(autocommit=True),
+            open=True,
+        )
+    return _pool
+
+
+def close_connection() -> None:
+    global _pool
+    if _pool is None:
+        return
+    try:
+        _pool.close()
+    except Exception:
+        logger.debug("Erro ao fechar pool do PostgreSQL.", exc_info=True)
+    finally:
+        _pool = None
+
+
+atexit.register(close_connection)
+
+
+@contextmanager
+def _acquire_connection(connection=None, *, autocommit: bool = True):
+    if connection is not None:
+        yield connection
+        return
+
+    pool = _get_pool()
+    if pool is not None:
+        with pool.connection() as pooled_connection:
+            yield pooled_connection
+        return
+
+    direct_connection = _create_direct_connection(autocommit=autocommit)
+    try:
+        yield direct_connection
+    finally:
+        try:
+            direct_connection.close()
+        except Exception:
+            logger.debug("Erro ao fechar conexao direta com PostgreSQL.", exc_info=True)
+
+
+@contextmanager
+def db_transaction():
+    with _acquire_connection(autocommit=False) as conn:
+        with conn.transaction():
+            yield conn
 
 
 def _parse_scalar(value: str) -> Any:
@@ -147,7 +236,7 @@ def _parse_filter(column: str, raw_value: Any) -> tuple[str, list[Any]]:
     )
     for prefix, operator in operators:
         if raw_value.startswith(prefix):
-            return f"{quoted_column} {operator} %s", [_parse_scalar(raw_value[len(prefix) :])]
+            return f"{quoted_column} {operator} %s", [_parse_scalar(raw_value[len(prefix):])]
 
     if raw_value.startswith("is."):
         scalar = _parse_scalar(raw_value[3:])
@@ -222,20 +311,36 @@ def _split_filters(filters: dict[str, Any] | None) -> tuple[list[str], list[Any]
     return where_clauses, params, order_by, limit
 
 
-def _fetch_rows(query: str, params: Iterable[Any] | None = None) -> list[dict]:
-    conn = _get_connection()
-    try:
-        with conn.cursor() as cur:
-            cur.execute(query, params or [])
-            if cur.description is None:
-                return []
-            return list(cur.fetchall())
-    except Exception:
+def _execute_fetch(
+    conn,
+    query: str,
+    params: Iterable[Any] | None = None,
+) -> list[dict]:
+    with conn.cursor() as cur:
+        cur.execute(query, params or [])
+        if cur.description is None:
+            return []
+        return list(cur.fetchall())
+
+
+def _fetch_rows(
+    query: str,
+    params: Iterable[Any] | None = None,
+    *,
+    connection=None,
+) -> list[dict]:
+    if connection is not None:
+        return _execute_fetch(connection, query, params)
+
+    with _acquire_connection() as conn:
         try:
-            conn.rollback()
+            return _execute_fetch(conn, query, params)
         except Exception:
-            logger.debug("Rollback falhou apos erro de query.", exc_info=True)
-        raise
+            try:
+                conn.rollback()
+            except Exception:
+                logger.debug("Rollback falhou apos erro de query.", exc_info=True)
+            raise
 
 
 def db_select(
@@ -244,6 +349,8 @@ def db_select(
     filters: dict[str, Any] | None = None,
     order_by: str | None = None,
     limit: int | None = None,
+    *,
+    connection=None,
 ) -> list[dict]:
     where_clauses, params, filters_order_by, filters_limit = _split_filters(filters)
     effective_order = order_by or filters_order_by
@@ -256,10 +363,16 @@ def db_select(
     if effective_limit is not None:
         query += " LIMIT %s"
         params.append(int(effective_limit))
-    return _fetch_rows(query, params)
+    return _fetch_rows(query, params, connection=connection)
 
 
-def db_insert(table: str, data: dict | list[dict], returning: str = "*") -> list[dict]:
+def db_insert(
+    table: str,
+    data: dict | list[dict],
+    returning: str = "*",
+    *,
+    connection=None,
+) -> list[dict]:
     rows = data if isinstance(data, list) else [data]
     if not rows:
         return []
@@ -279,7 +392,7 @@ def db_insert(table: str, data: dict | list[dict], returning: str = "*") -> list
     query = f"INSERT INTO {_quote_qualified_name(table)} ({quoted_columns}) VALUES {values_sql}"
     if returning:
         query += f" RETURNING {_parse_columns(returning)}"
-    return _fetch_rows(query, params)
+    return _fetch_rows(query, params, connection=connection)
 
 
 def db_update(
@@ -287,6 +400,8 @@ def db_update(
     data: dict[str, Any],
     filters: dict[str, Any],
     returning: str = "*",
+    *,
+    connection=None,
 ) -> list[dict]:
     if not data:
         return []
@@ -305,18 +420,24 @@ def db_update(
     query += " WHERE " + " AND ".join(where_clauses)
     if returning:
         query += f" RETURNING {_parse_columns(returning)}"
-    return _fetch_rows(query, params)
+    return _fetch_rows(query, params, connection=connection)
 
 
-def db_delete(table: str, filters: dict[str, Any]) -> None:
+def db_delete(table: str, filters: dict[str, Any], *, connection=None) -> None:
     where_clauses, params, _order, _limit = _split_filters(filters)
     if not where_clauses:
         raise ValueError("DELETE sem filtros nao e permitido.")
     query = f"DELETE FROM {_quote_qualified_name(table)} WHERE " + " AND ".join(where_clauses)
-    _fetch_rows(query, params)
+    _fetch_rows(query, params, connection=connection)
 
 
-def db_call(function_name: str, params: dict[str, Any], expect_rows: bool = True) -> list[dict]:
+def db_call(
+    function_name: str,
+    params: dict[str, Any],
+    expect_rows: bool = True,
+    *,
+    connection=None,
+) -> list[dict]:
     ordered_items = list((params or {}).items())
     if ordered_items:
         args_sql = ", ".join(
@@ -332,7 +453,7 @@ def db_call(function_name: str, params: dict[str, Any], expect_rows: bool = True
         query = f"SELECT * FROM {qualified_name}({args_sql})"
     else:
         query = f"SELECT {qualified_name}({args_sql})"
-    return _fetch_rows(query, query_params)
+    return _fetch_rows(query, query_params, connection=connection)
 
 
 def is_missing_function_error(error: Exception) -> bool:

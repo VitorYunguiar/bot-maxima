@@ -73,6 +73,32 @@ class TestAnalyticalIngest(unittest.TestCase):
         self.assertEqual(row["metadata"]["section_title"], "Pedido nao integra")
         self.assertEqual(row["metadata"]["module"], "sql_integracao")
 
+    def test_build_section_retrieval_text_includes_operational_signals(self):
+        section = ingest.AnalyticalSection(
+            section_index=1,
+            title="Pedido bloqueado",
+            heading_path="Pedidos > Pedido bloqueado",
+            content="Validar a tabela MXSINTEGRACAOPEDIDO e o parametro PEDIDO_BLOQUEADO.",
+            module="pedidos_vendas",
+            answer_mode="troubleshooting",
+            entities={
+                "tables": ["MXSINTEGRACAOPEDIDO"],
+                "parameters": ["PEDIDO_BLOQUEADO"],
+                "endpoints": [],
+                "statuses": [],
+                "error_terms": ["pedido bloqueado"],
+            },
+            semantic_context="Secao operacional de bloqueio de pedidos",
+        )
+
+        retrieval_text = ingest._build_section_retrieval_text("Base MaxPedido", section)
+
+        self.assertIn("Documento: Base MaxPedido", retrieval_text)
+        self.assertIn("Secao: Pedidos > Pedido bloqueado", retrieval_text)
+        self.assertIn("Modo de resposta: troubleshooting", retrieval_text)
+        self.assertIn("Tabelas: MXSINTEGRACAOPEDIDO", retrieval_text)
+        self.assertIn("Parametros: PEDIDO_BLOQUEADO", retrieval_text)
+
 
 if __name__ == "__main__":
     unittest.main()

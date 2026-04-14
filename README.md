@@ -102,3 +102,32 @@ docker compose --profile tools run --rm teams_package
 - para ambiente corporativo, o ideal e hospedar em infraestrutura da empresa ou Azure
 - `documentos/` nao e versionado; se a operacao depender de ingestao local ou base documental local,
   copie essa pasta separadamente para a maquina nova
+
+## Extracao Gatekeeper
+
+O pipeline dataset-first para tickets do Gatekeeper fica em `scripts/extract_jira_gatekeeper_filipe.py`.
+
+Para uso simples no Windows, abra `abrir_extrator_gatekeeper.bat`.
+Isso abre uma janela com botao `Extrair tickets` e grava os `.md` em
+`documentos/gatekeeper_markdowns` por padrao.
+
+Variaveis principais no `.env`:
+
+- `JIRA_URL` ou `JIRA_BASE_URL`
+- `JIRA_USERNAME` + `JIRA_API_TOKEN`
+- ou `JIRA_USERNAME` + `JIRA_PASSWORD`
+- ou `JIRA_SESSION_COOKIE`
+- `JIRA_ASSIGNEE_ALIASES`
+
+Exemplo de execucao:
+
+```powershell
+py scripts\extract_jira_gatekeeper_filipe.py --limit 20 --no-llm
+```
+
+Saida padrao:
+
+- `datasets/gatekeeper_filipe/raw`
+- `datasets/gatekeeper_filipe/normalized`
+- `datasets/gatekeeper_filipe/gold`
+- `datasets/gatekeeper_filipe/review`

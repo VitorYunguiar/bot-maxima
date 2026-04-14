@@ -3,7 +3,7 @@
 Choose one schema and keep it aligned with `.env`:
 
 - `sql/setup_1536.sql` -> `VECTOR(1536)` (recommended default)
-- `sql/setup.sql` -> `VECTOR(3072)` (higher quality, only if your pgvector accepts 3072)
+- `sql/setup_3072.sql` -> `VECTOR(3072)` (shadow experiment only, higher index/storage cost)
 
 After running one SQL script in PostgreSQL, set the same value in `.env`:
 
@@ -40,5 +40,8 @@ After the base setup script, run optional migrations according to the features y
   - `evaluation_runs`
   - `evaluation_results`
   - `evaluation_run_summary` (view)
+- `sql/add_analytical_context.sql`: creates `document_sections` and enriches chunk metadata.
+- `sql/add_section_retrieval_1536.sql`: adds section embeddings + section-aware RPCs for `VECTOR(1536)`.
+- `sql/add_section_retrieval_3072.sql`: same as above for `VECTOR(3072)`.
 
 In Docker, the local PostgreSQL bootstrap runs these scripts automatically on the first startup of the `postgres` service.

@@ -142,6 +142,63 @@ class TestAnalyticalContextFormatting(unittest.TestCase):
         self.assertIn("Tabelas: MXSINTEGRACAOPEDIDO", context)
         self.assertLess(context.index("<analytical_context>"), context.index("<evidence>"))
 
+    def test_build_context_limits_document_dominance(self):
+        chunks = []
+        for idx in range(5):
+            chunks.append(
+                {
+                    "id": f"doc-a-{idx}",
+                    "document_id": "doc-a",
+                    "section_id": "section-a",
+                    "filename": "dominante.md",
+                    "content": f"Trecho dominante {idx}",
+                    "chunk_index": idx,
+                    "similarity": 0.95 - (idx * 0.01),
+                    "metadata": {"doc_priority": 5, "source_kind": "kb"},
+                }
+            )
+        chunks.append(
+            {
+                "id": "doc-b-0",
+                "document_id": "doc-b",
+                "section_id": "section-b",
+                "filename": "diverso.md",
+                "content": "Trecho diverso",
+                "chunk_index": 0,
+                "similarity": 0.90,
+                "metadata": {"doc_priority": 5, "source_kind": "kb"},
+            }
+        )
+
+        with patch.multiple(config, MAX_CHUNKS_PER_SECTION=2, MAX_CHUNKS_PER_DOCUMENT=3):
+            context = rag.build_context(chunks)
+
+        self.assertIn("dominante.md", context)
+        self.assertIn("diverso.md", context)
+        self.assertLessEqual(context.count("Trecho dominante"), 3)
+
+
+class TestRerankPolicy(unittest.TestCase):
+    def test_should_rerank_only_inside_gray_zone(self):
+        chunks = [
+            {"id": "1", "document_id": "doc-1", "section_id": "s-1", "filename": "a.md", "similarity": 0.70},
+            {"id": "2", "document_id": "doc-2", "section_id": "s-2", "filename": "b.md", "similarity": 0.69},
+            {"id": "3", "document_id": "doc-3", "section_id": "s-3", "filename": "c.md", "similarity": 0.68},
+        ]
+        strong_chunks = [
+            {"id": "1", "document_id": "doc-1", "section_id": "s-1", "filename": "a.md", "similarity": 0.91},
+            {"id": "2", "document_id": "doc-2", "section_id": "s-2", "filename": "b.md", "similarity": 0.69},
+        ]
+
+        with patch.multiple(
+            config,
+            RAG_ENABLE_RERANKING=True,
+            RERANKER_MIN_TRIGGER_SIM=0.55,
+            RERANKER_MAX_TRIGGER_SIM=0.82,
+        ):
+            self.assertTrue(rag._should_rerank_chunks(chunks))
+            self.assertFalse(rag._should_rerank_chunks(strong_chunks))
+
 
 class TestOpenAIExtraction(unittest.TestCase):
     def test_extracts_text_from_nested_content_item(self):
