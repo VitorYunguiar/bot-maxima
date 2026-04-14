@@ -1,6 +1,8 @@
 import unittest
 from uuid import uuid4
 from unittest.mock import patch
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import config
 import db
@@ -8,6 +10,25 @@ import ingest
 
 
 class TestAnalyticalIngest(unittest.TestCase):
+    def test_collect_local_files_skips_excluded_directories(self):
+        with TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            (root / "base.md").write_text("# Base\n\nConteudo", encoding="utf-8")
+            (root / "docbkp").mkdir()
+            (root / "docbkp" / "backup.md").write_text("# Backup\n\nConteudo", encoding="utf-8")
+            (root / "gatekeeper_markdowns").mkdir()
+            (root / "gatekeeper_markdowns" / "GATE-1.md").write_text("# Ticket\n\nConteudo", encoding="utf-8")
+
+            with patch.object(config, "INGEST_RECURSIVE", True), patch.object(
+                config,
+                "INGEST_EXCLUDED_DIR_NAMES",
+                ("docbkp", "gatekeeper_markdowns"),
+            ):
+                _docs_path, files = ingest._collect_local_files(directory=str(root), recursive=True)
+
+        names = sorted(path.name for path in files)
+        self.assertEqual(names, ["base.md"])
+
     def test_json_safe_normalizes_nested_uuid_values(self):
         document_id = uuid4()
         nested_id = uuid4()

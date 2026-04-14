@@ -1720,10 +1720,26 @@ def _collect_local_files(
             logger.info("Coloque seus documentos nele e execute novamente")
         return docs_path, []
 
+    excluded_dir_names = {
+        str(name).strip().lower()
+        for name in config.INGEST_EXCLUDED_DIR_NAMES
+        if str(name).strip()
+    }
+
+    def _is_excluded(path: Path) -> bool:
+        try:
+            relative_parts = path.relative_to(docs_path).parts
+        except ValueError:
+            relative_parts = path.parts
+        return any(part.lower() in excluded_dir_names for part in relative_parts[:-1])
+
     file_sources: list[Path] = []
     for ext in READERS:
         iterator = docs_path.rglob(f"*{ext}") if use_recursive else docs_path.glob(f"*{ext}")
-        file_sources.extend(path for path in iterator if path.is_file())
+        file_sources.extend(
+            path for path in iterator
+            if path.is_file() and not _is_excluded(path)
+        )
 
     deduped_sources: list[Path] = []
     seen: set[str] = set()
