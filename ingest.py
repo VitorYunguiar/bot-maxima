@@ -1336,7 +1336,7 @@ def _persist_section_retrieval_data(
         )
 
 
-def _insert_chunk_rows(rows: list[dict], *, connection) -> set[int]:
+def _insert_chunk_rows(rows: list[dict]) -> set[int]:
     if not rows:
         return set()
 
@@ -1345,7 +1345,7 @@ def _insert_chunk_rows(rows: list[dict], *, connection) -> set[int]:
     for batch_start in range(0, len(rows), batch_size):
         batch_rows = rows[batch_start : batch_start + batch_size]
         try:
-            with connection.transaction():
+            with db_transaction() as connection:
                 supabase_insert("document_chunks", batch_rows, connection=connection)
             inserted_indices.update(int(row["chunk_index"]) for row in batch_rows)
         except Exception as batch_error:
@@ -1357,7 +1357,7 @@ def _insert_chunk_rows(rows: list[dict], *, connection) -> set[int]:
             for row in batch_rows:
                 chunk_index = int(row.get("chunk_index", -1))
                 try:
-                    with connection.transaction():
+                    with db_transaction() as connection:
                         supabase_insert("document_chunks", row, connection=connection)
                     inserted_indices.add(chunk_index)
                 except Exception as row_error:
@@ -1428,6 +1428,7 @@ def _ingest_text_source(
 
     total_inserted = 0
     failed_chunks: list[int] = []
+    doc_id = None
 
     try:
         with db_transaction() as connection:
@@ -1466,132 +1467,6 @@ def _ingest_text_source(
             doc_id = doc_result[0]["id"]
             for section in sections:
                 section.section_id = _insert_document_section(doc_id, section, connection=connection)
-
-            try:
-                with connection.transaction():
-                    _persist_section_retrieval_data(
-                        doc_id,
-                        title,
-                        sections,
-                        connection=connection,
-                    )
-            except Exception as section_error:
-                logger.warning(
-                    "Nao foi possivel persistir retrieval por secao em %s: %s",
-                    filename,
-                    section_error,
-                )
-
-            batch_size = max(1, config.EMBEDDING_BATCH_SIZE)
-            for batch_start in range(0, len(chunk_items), batch_size):
-                batch = chunk_items[batch_start : batch_start + batch_size]
-                clean_batch: list[tuple[int, str, str, AnalyticalSection]] = []
-
-                for chunk_index, storage_content, retrieval_content, section in batch:
-                    clean_storage = storage_content.replace("\x00", "").strip()
-                    clean_retrieval = retrieval_content.replace("\x00", "").strip()
-                    if not clean_storage or not clean_retrieval:
-                        failed_chunks.append(chunk_index)
-                        continue
-                    clean_batch.append((chunk_index, clean_storage, clean_retrieval, section))
-
-                if clean_batch:
-                    for ctx_start in range(0, len(clean_batch), _CONTEXTUAL_BATCH_SIZE):
-                        ctx_sub = clean_batch[ctx_start : ctx_start + _CONTEXTUAL_BATCH_SIZE]
-                        ctx_pairs = [
-                            (chunk_index, retrieval_content)
-                            for chunk_index, _clean_storage, retrieval_content, _section in ctx_sub
-                        ]
-                        ctx_result = _contextualize_chunks_batch(
-                            chunks_with_indices=ctx_pairs,
-                            full_document=text,
-                            filename=filename,
-                        )
-                        by_index = {
-                            chunk_index: (clean_storage, section)
-                            for chunk_index, clean_storage, _retrieval_content, section in ctx_sub
-                        }
-                        clean_batch[ctx_start : ctx_start + _CONTEXTUAL_BATCH_SIZE] = [
-                            (chunk_index, by_index[chunk_index][0], contextualized_content, by_index[chunk_index][1])
-                            for chunk_index, contextualized_content in ctx_result
-                        ]
-
-                if not clean_batch:
-                    continue
-
-                rows = []
-                indices = [item[0] for item in clean_batch]
-                storage_contents = [item[1] for item in clean_batch]
-                retrieval_contents = [item[2] for item in clean_batch]
-                sections_for_batch = [item[3] for item in clean_batch]
-
-                try:
-                    embeddings = _embed_batch_with_retry(retrieval_contents, filename, indices[0])
-                    for chunk_index, storage_content, section, embedding in zip(
-                        indices,
-                        storage_contents,
-                        sections_for_batch,
-                        embeddings,
-                    ):
-                        rows.append(_build_chunk_row(
-                            doc_id=doc_id,
-                            chunk_index=chunk_index,
-                            clean_content=storage_content,
-                            filename=filename,
-                            doc_type=doc_type,
-                            source_type=source_type,
-                            module=module,
-                            title=title,
-                            doc_priority=doc_priority,
-                            embedding=embedding,
-                            section=section,
-                        ))
-                except Exception as batch_error:
-                    logger.error(
-                        "Erro no lote de %s (chunk inicial %s): %s. Fallback chunk a chunk...",
-                        filename,
-                        batch_start,
-                        batch_error,
-                    )
-                    for chunk_index, storage_content, retrieval_content, section in clean_batch:
-                        try:
-                            embedding = _embed_batch_with_retry([retrieval_content], filename, chunk_index)[0]
-                            rows.append(_build_chunk_row(
-                                doc_id=doc_id,
-                                chunk_index=chunk_index,
-                                clean_content=storage_content,
-                                filename=filename,
-                                doc_type=doc_type,
-                                source_type=source_type,
-                                module=module,
-                                title=title,
-                                doc_priority=doc_priority,
-                                embedding=embedding,
-                                section=section,
-                            ))
-                        except Exception as chunk_error:
-                            failed_chunks.append(chunk_index)
-                            logger.error("Erro no chunk %s de %s: %s", chunk_index, filename, chunk_error)
-
-                if rows:
-                    inserted_indices = _insert_chunk_rows(rows, connection=connection)
-                    total_inserted += len(inserted_indices)
-                    for row in rows:
-                        chunk_idx = int(row["chunk_index"])
-                        if chunk_idx not in inserted_indices and chunk_idx not in failed_chunks:
-                            failed_chunks.append(chunk_idx)
-
-                logger.info("%s/%s chunks inseridos (%s)", total_inserted, len(chunk_items), filename)
-
-            if total_inserted == 0:
-                raise RuntimeError("nenhum chunk inserido")
-
-            supabase_update(
-                "documents",
-                {"chunk_count": total_inserted, "priority": doc_priority},
-                {"id": f"eq.{doc_id}"},
-                connection=connection,
-            )
     except RuntimeError as exc:
         if str(exc) != "nenhum chunk inserido":
             raise
@@ -1602,6 +1477,140 @@ def _ingest_text_source(
             "failed_chunks": len(failed_chunks),
             "error": "nenhum chunk inserido",
         }
+
+    try:
+        _persist_section_retrieval_data(
+            doc_id,
+            title,
+            sections,
+        )
+    except Exception as section_error:
+        logger.warning(
+            "Nao foi possivel persistir retrieval por secao em %s: %s",
+            filename,
+            section_error,
+        )
+
+    batch_size = max(1, config.EMBEDDING_BATCH_SIZE)
+    for batch_start in range(0, len(chunk_items), batch_size):
+        batch = chunk_items[batch_start : batch_start + batch_size]
+        clean_batch: list[tuple[int, str, str, AnalyticalSection]] = []
+
+        for chunk_index, storage_content, retrieval_content, section in batch:
+            clean_storage = storage_content.replace("\x00", "").strip()
+            clean_retrieval = retrieval_content.replace("\x00", "").strip()
+            if not clean_storage or not clean_retrieval:
+                failed_chunks.append(chunk_index)
+                continue
+            clean_batch.append((chunk_index, clean_storage, clean_retrieval, section))
+
+        if clean_batch:
+            for ctx_start in range(0, len(clean_batch), _CONTEXTUAL_BATCH_SIZE):
+                ctx_sub = clean_batch[ctx_start : ctx_start + _CONTEXTUAL_BATCH_SIZE]
+                ctx_pairs = [
+                    (chunk_index, retrieval_content)
+                    for chunk_index, _clean_storage, retrieval_content, _section in ctx_sub
+                ]
+                ctx_result = _contextualize_chunks_batch(
+                    chunks_with_indices=ctx_pairs,
+                    full_document=text,
+                    filename=filename,
+                )
+                by_index = {
+                    chunk_index: (clean_storage, section)
+                    for chunk_index, clean_storage, _retrieval_content, section in ctx_sub
+                }
+                clean_batch[ctx_start : ctx_start + _CONTEXTUAL_BATCH_SIZE] = [
+                    (chunk_index, by_index[chunk_index][0], contextualized_content, by_index[chunk_index][1])
+                    for chunk_index, contextualized_content in ctx_result
+                ]
+
+        if not clean_batch:
+            continue
+
+        rows = []
+        indices = [item[0] for item in clean_batch]
+        storage_contents = [item[1] for item in clean_batch]
+        retrieval_contents = [item[2] for item in clean_batch]
+        sections_for_batch = [item[3] for item in clean_batch]
+
+        try:
+            embeddings = _embed_batch_with_retry(retrieval_contents, filename, indices[0])
+            for chunk_index, storage_content, section, embedding in zip(
+                indices,
+                storage_contents,
+                sections_for_batch,
+                embeddings,
+            ):
+                rows.append(_build_chunk_row(
+                    doc_id=doc_id,
+                    chunk_index=chunk_index,
+                    clean_content=storage_content,
+                    filename=filename,
+                    doc_type=doc_type,
+                    source_type=source_type,
+                    module=module,
+                    title=title,
+                    doc_priority=doc_priority,
+                    embedding=embedding,
+                    section=section,
+                ))
+        except Exception as batch_error:
+            logger.error(
+                "Erro no lote de %s (chunk inicial %s): %s. Fallback chunk a chunk...",
+                filename,
+                batch_start,
+                batch_error,
+            )
+            for chunk_index, storage_content, retrieval_content, section in clean_batch:
+                try:
+                    embedding = _embed_batch_with_retry([retrieval_content], filename, chunk_index)[0]
+                    rows.append(_build_chunk_row(
+                        doc_id=doc_id,
+                        chunk_index=chunk_index,
+                        clean_content=storage_content,
+                        filename=filename,
+                        doc_type=doc_type,
+                        source_type=source_type,
+                        module=module,
+                        title=title,
+                        doc_priority=doc_priority,
+                        embedding=embedding,
+                        section=section,
+                    ))
+                except Exception as chunk_error:
+                    failed_chunks.append(chunk_index)
+                    logger.error("Erro no chunk %s de %s: %s", chunk_index, filename, chunk_error)
+
+        if rows:
+            inserted_indices = _insert_chunk_rows(rows)
+            total_inserted += len(inserted_indices)
+            for row in rows:
+                chunk_idx = int(row["chunk_index"])
+                if chunk_idx not in inserted_indices and chunk_idx not in failed_chunks:
+                    failed_chunks.append(chunk_idx)
+
+        logger.info("%s/%s chunks inseridos (%s)", total_inserted, len(chunk_items), filename)
+
+    if total_inserted == 0:
+        if doc_id is not None:
+            with db_transaction() as connection:
+                supabase_delete("documents", "id", doc_id, connection=connection)
+        logger.error("Nenhum chunk inserido para %s. Documento removido.", filename)
+        return {
+            "filename": filename,
+            "chunks_count": 0,
+            "failed_chunks": len(failed_chunks),
+            "error": "nenhum chunk inserido",
+        }
+
+    with db_transaction() as connection:
+        supabase_update(
+            "documents",
+            {"chunk_count": total_inserted, "priority": doc_priority},
+            {"id": f"eq.{doc_id}"},
+            connection=connection,
+        )
 
     _save_failed_report_entry(
         filename=filename,
