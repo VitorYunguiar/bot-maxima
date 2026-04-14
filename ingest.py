@@ -1327,13 +1327,46 @@ def _persist_section_retrieval_data(
                 "embedding": embedding_to_pgvector(embedding),
                 "metadata": {
                     "source": "ingest.py",
-                    "document_id": doc_id,
+                    "document_id": str(doc_id),
                     "retrieval_ready": True,
                 },
             },
             {"id": f"eq.{section.section_id}"},
             connection=connection,
         )
+
+
+def _insert_chunk_rows(rows: list[dict], *, connection) -> set[int]:
+    if not rows:
+        return set()
+
+    inserted_indices: set[int] = set()
+    batch_size = max(1, int(config.INGEST_DB_BATCH_SIZE))
+    for batch_start in range(0, len(rows), batch_size):
+        batch_rows = rows[batch_start : batch_start + batch_size]
+        try:
+            with connection.transaction():
+                supabase_insert("document_chunks", batch_rows, connection=connection)
+            inserted_indices.update(int(row["chunk_index"]) for row in batch_rows)
+        except Exception as batch_error:
+            logger.error(
+                "Erro ao inserir lote de chunks (%s registros): %s. Tentando chunk a chunk...",
+                len(batch_rows),
+                batch_error,
+            )
+            for row in batch_rows:
+                chunk_index = int(row.get("chunk_index", -1))
+                try:
+                    with connection.transaction():
+                        supabase_insert("document_chunks", row, connection=connection)
+                    inserted_indices.add(chunk_index)
+                except Exception as row_error:
+                    logger.error(
+                        "Falha ao persistir chunk %s durante fallback de insert: %s",
+                        chunk_index,
+                        row_error,
+                    )
+    return inserted_indices
 
 
 def _ingest_text_source(
@@ -1435,12 +1468,13 @@ def _ingest_text_source(
                 section.section_id = _insert_document_section(doc_id, section, connection=connection)
 
             try:
-                _persist_section_retrieval_data(
-                    doc_id,
-                    title,
-                    sections,
-                    connection=connection,
-                )
+                with connection.transaction():
+                    _persist_section_retrieval_data(
+                        doc_id,
+                        title,
+                        sections,
+                        connection=connection,
+                    )
             except Exception as section_error:
                 logger.warning(
                     "Nao foi possivel persistir retrieval por secao em %s: %s",
@@ -1540,8 +1574,12 @@ def _ingest_text_source(
                             logger.error("Erro no chunk %s de %s: %s", chunk_index, filename, chunk_error)
 
                 if rows:
-                    supabase_insert("document_chunks", rows, connection=connection)
-                    total_inserted += len(rows)
+                    inserted_indices = _insert_chunk_rows(rows, connection=connection)
+                    total_inserted += len(inserted_indices)
+                    for row in rows:
+                        chunk_idx = int(row["chunk_index"])
+                        if chunk_idx not in inserted_indices and chunk_idx not in failed_chunks:
+                            failed_chunks.append(chunk_idx)
 
                 logger.info("%s/%s chunks inseridos (%s)", total_inserted, len(chunk_items), filename)
 

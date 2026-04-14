@@ -11,6 +11,7 @@ import re
 from collections.abc import Iterable
 from contextlib import contextmanager
 from typing import Any
+from uuid import UUID
 
 import config
 
@@ -62,9 +63,23 @@ def _normalize_json_value(field_name: str, value: Any) -> Any:
     if Jsonb is None:
         return value
     if isinstance(value, dict):
-        return Jsonb(value)
+        return Jsonb(_json_safe(value))
     if isinstance(value, list) and field_name not in _ARRAY_PARAM_NAMES:
-        return Jsonb(value)
+        return Jsonb(_json_safe(value))
+    return value
+
+
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, UUID):
+        return str(value)
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, tuple):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, set):
+        return [_json_safe(item) for item in sorted(value, key=str)]
     return value
 
 

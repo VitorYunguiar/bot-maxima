@@ -1,11 +1,28 @@
 import unittest
+from uuid import uuid4
 from unittest.mock import patch
 
 import config
+import db
 import ingest
 
 
 class TestAnalyticalIngest(unittest.TestCase):
+    def test_json_safe_normalizes_nested_uuid_values(self):
+        document_id = uuid4()
+        nested_id = uuid4()
+
+        payload = {
+            "document_id": document_id,
+            "items": [nested_id, {"inner": nested_id}],
+        }
+
+        normalized = db._json_safe(payload)
+
+        self.assertEqual(normalized["document_id"], str(document_id))
+        self.assertEqual(normalized["items"][0], str(nested_id))
+        self.assertEqual(normalized["items"][1]["inner"], str(nested_id))
+
     def test_extracts_entities_and_answer_mode_from_markdown_section(self):
         text = (
             "# Base maxPedido\n\n"

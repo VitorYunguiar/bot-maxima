@@ -75,8 +75,16 @@ ON document_chunks(section_id, document_id, chunk_index);
 
 DROP FUNCTION IF EXISTS public.match_chunks(vector, integer, double precision, text[], text[], uuid[], integer);
 DROP FUNCTION IF EXISTS public.match_chunks(vector, integer, real, text[], text[], uuid[], integer);
+DROP FUNCTION IF EXISTS public.match_chunks(vector, integer, double precision);
+DROP FUNCTION IF EXISTS public.match_chunks(vector, integer, real);
+DROP FUNCTION IF EXISTS public.match_chunks(vector, integer, double precision, text[], text[]);
+DROP FUNCTION IF EXISTS public.match_chunks(vector, integer, real, text[], text[]);
 DROP FUNCTION IF EXISTS public.hybrid_match_chunks(vector, text, integer, double precision, double precision, double precision, text[], text[], uuid[], integer);
 DROP FUNCTION IF EXISTS public.hybrid_match_chunks(vector, text, integer, real, real, real, text[], text[], uuid[], integer);
+DROP FUNCTION IF EXISTS public.hybrid_match_chunks(vector, text, integer, double precision, double precision, double precision);
+DROP FUNCTION IF EXISTS public.hybrid_match_chunks(vector, text, integer, real, real, real);
+DROP FUNCTION IF EXISTS public.hybrid_match_chunks(vector, text, integer, double precision, double precision, double precision, text[], text[]);
+DROP FUNCTION IF EXISTS public.hybrid_match_chunks(vector, text, integer, real, real, real, text[], text[]);
 DROP FUNCTION IF EXISTS public.hybrid_match_sections(vector, text, integer, double precision, double precision, double precision, text[], text[], integer);
 DROP FUNCTION IF EXISTS public.hybrid_match_sections(vector, text, integer, real, real, real, text[], text[], integer);
 
@@ -152,7 +160,7 @@ BEGIN
         )
         AND (
             COALESCE(array_length(filter_section_ids, 1), 0) = 0
-            OR dc.section_id IN (SELECT section_id FROM section_scope)
+            OR dc.section_id IN (SELECT ss.section_id FROM section_scope ss)
         )
     ),
     top_matches AS (
@@ -322,7 +330,7 @@ BEGIN
         )
         AND (
             COALESCE(array_length(filter_section_ids, 1), 0) = 0
-            OR dc.section_id IN (SELECT section_id FROM section_scope)
+            OR dc.section_id IN (SELECT ss.section_id FROM section_scope ss)
         )
     ),
     vector_results AS (
