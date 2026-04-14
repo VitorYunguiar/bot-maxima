@@ -260,15 +260,6 @@ MAX_IMAGE_SIZE_BYTES = MAX_IMAGE_SIZE_MB * 1024 * 1024
 # Diretorio de documentos
 DOCS_DIR = os.getenv("DOCS_DIR", "./documentos")
 FAILED_INGEST_REPORT = os.getenv("FAILED_INGEST_REPORT", "./ingest_failures.json")
-INGEST_RECURSIVE = _env_bool("INGEST_RECURSIVE", True)
-INGEST_EXCLUDED_DIR_NAMES = tuple(
-    part.strip().lower()
-    for part in os.getenv(
-        "INGEST_EXCLUDED_DIR_NAMES",
-        "docbkp,gatekeeper_markdowns,_pendentes_url,_revisao_jira_mxped",
-    ).split(",")
-    if part.strip()
-)
 
 # Jira - extracao Gatekeeper
 JIRA_URL = os.getenv("JIRA_URL", "")
