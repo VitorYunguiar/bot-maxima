@@ -3744,10 +3744,6 @@ Foi verificado que o rca em questão possui roteiro cadastrado no dia
 
 Além disso, os testes foram realizados em base zero na versão de ponta
 
-Login para teste
-
-jfrios.olavo
-
 **Passos para reproduzir**
 
 - Entrar na base do rca, iniciar um pedido e realizar checkin no primeiro cliente do dia, realizar o pedido e checkout. Em seguida, realizar o checkin no último cliente do dia
@@ -3962,21 +3958,6 @@ Possui um erro no registro de KM do setor 54, em que a mesma realizou toda a rot
 
 Nesse cenário, a atualização da versão corrige essas inconsistências de valores anteriores de KM que o cliente relata, ou para se obter os dados retroativos demanda de um reprocessamento no back-end para ser regularizados os registros de KM? segue base maxtracking
 
-!image-2024-12-12-17-46-16-837.png!
-
-!image-2024-12-12-17-46-34-551.png!
-
-**Passos para reproduzir**
-
-- conforme descrição
-
-**Resultado apresentado**
-
-N/A
-
-**Resultado esperado**
-
-N/A
 
 **Diagnostico e orientacao**
 
