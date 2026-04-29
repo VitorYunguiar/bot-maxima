@@ -230,24 +230,28 @@ INTENT_DOC_TYPES = {
 
 INTENT_RESPONSE_INSTRUCTIONS = {
     "sql_lookup": (
-        "Para perguntas SQL/tabela, estruture a resposta em: "
+        "Para perguntas SQL/tabela, organize em subtitulos curtos: "
         "objetivo, tabelas principais, campos-chave e validacao. "
+        "Explique o uso em paragrafos curtos e reserve bullets para campos ou validacoes. "
         "Inclua SQL somente se estiver no contexto."
     ),
     "configuration": (
-        "Para configuracoes, traga caminho exato (menu/tela/campo) quando houver, "
-        "parametros envolvidos e impacto esperado."
+        "Para configuracoes, responda em texto corrido com subtitulos. "
+        "Traga caminho exato (menu/tela/campo) quando houver, parametros envolvidos "
+        "e impacto esperado."
     ),
     "integration": (
-        "Para integracao, destaque fluxo origem-destino, tabelas/enderecos envolvidos "
-        "e pontos de validacao operacional."
+        "Para integracao, explique primeiro o fluxo origem-destino em um paragrafo curto. "
+        "Depois destaque tabelas/enderecos envolvidos e pontos de validacao operacional "
+        "em grupos compactos."
     ),
     "troubleshooting": (
-        "Para troubleshooting, responda com checklist objetivo: "
-        "causa provavel, verificacoes e acao recomendada."
+        "Para troubleshooting, organize em causa provavel, verificacoes e acao recomendada. "
+        "Use checklist apenas nas verificacoes praticas; explique a causa e a conclusao em paragrafos curtos."
     ),
     "process": (
-        "Para processo de negocio, responda passo a passo curto e com pre-condicoes."
+        "Para processo de negocio, explique as pre-condicoes em texto e use passo a passo curto "
+        "somente quando a ordem estiver documentada."
     ),
 }
 

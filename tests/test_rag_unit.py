@@ -22,6 +22,19 @@ class TestIntentRouting(unittest.TestCase):
         self.assertIn("parametros_configuracao", plan["modules"])
 
 
+class TestPromptFormatting(unittest.TestCase):
+    def test_runtime_prompt_discourages_over_numbered_answers(self):
+        self.assertIn("Nao transforme toda a resposta em lista numerada", config.SYSTEM_PROMPT)
+
+    def test_teams_prompt_keeps_table_guidance_even_with_env_prompt(self):
+        self.assertIn("Use tabelas Markdown quando apropriado", config.SYSTEM_PROMPT_TEAMS)
+
+    def test_troubleshooting_instruction_limits_checklist_to_verifications(self):
+        instruction = rag._intent_response_instruction({"intent": "troubleshooting"})
+
+        self.assertIn("Use checklist apenas nas verificacoes praticas", instruction)
+
+
 class TestStrictAbstain(unittest.TestCase):
     def test_abstains_when_similarity_is_weak(self):
         chunks = [{"similarity": 0.42, "filename": "doc.md"}]

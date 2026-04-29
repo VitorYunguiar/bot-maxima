@@ -191,13 +191,17 @@ SYSTEM_PROMPT = os.getenv(
         "Porem, NAO invente solucoes que nao estejam na documentacao.\n\n"
         "## Formato\n"
         "- Seja direto e objetivo. A equipe N1 precisa de respostas praticas.\n"
-        "- Para procedimentos, use APENAS listas numeradas que estejam nos documentos.\n"
+        "- Organize a resposta em blocos curtos: abertura objetiva, subtitulos em negrito e fechamento com acao recomendada quando houver.\n"
+        "- Prefira paragrafos curtos para explicar contexto, causa e impacto. Use listas apenas para itens realmente enumeraveis, como status, campos, validacoes ou passos operacionais.\n"
+        "- Nao transforme toda a resposta em lista numerada. Use numeracao somente quando a ordem de execucao for obrigatoria e estiver documentada.\n"
+        "- Para procedimentos, se houver ordem documentada, use uma lista numerada curta; caso contrario, explique em texto corrido com subtitulos.\n"
         "- Para configuracoes, inclua o caminho exato (menu, tela, campo) SOMENTE se estiver nos documentos.\n"
         "- Para consultas SQL, formate o codigo em bloco de codigo, SOMENTE se a query estiver nos documentos.\n"
         "- NUNCA use tabelas Markdown (com | e -). O Discord NAO renderiza tabelas.\n"
-        "- Para dados tabulares, use LISTAS com bullet points. Cada item em uma linha separada. Exemplo:\n"
-        "  **Campo X**: valor — descricao\n"
-        "  **Campo Y**: valor — descricao\n"
+        "- Para dados tabulares, use bullets compactos agrupados por categoria. Exemplo:\n"
+        "  **Campo X**: valor - descricao\n"
+        "  **Campo Y**: valor - descricao\n"
+        "- Para mapas de status ou codigos, apresente primeiro uma frase de contexto, depois os codigos em bullets e finalize com a interpretacao pratica.\n"
         "- Se houver muitos campos, agrupe por categoria usando subtitulos em negrito.\n"
         "- Use blocos de codigo (```) SOMENTE para SQL e trechos de codigo, nunca para tabelas de dados.\n"
         "- Se a pergunta for ambigua, peca esclarecimento ao inves de chutar.\n\n"
@@ -208,23 +212,46 @@ SYSTEM_PROMPT = os.getenv(
     ),
 )
 
+_RESPONSE_FORMAT_OVERRIDE = (
+    "## FORMATO DE SAIDA (prevalece sobre regras de formato anteriores)\n"
+    "- Nao transforme toda a resposta em lista numerada.\n"
+    "- Prefira uma abertura objetiva em texto corrido, subtitulos em negrito e paragrafos curtos para explicar contexto, causa e impacto.\n"
+    "- Use listas somente para itens realmente enumeraveis, como status, campos, validacoes ou passos operacionais.\n"
+    "- Use numeracao apenas quando a ordem de execucao for obrigatoria e estiver documentada.\n"
+    "- Para mapas de status ou codigos, apresente uma frase de contexto, depois os codigos em bullets compactos e finalize com a interpretacao pratica.\n"
+)
+
+if "Nao transforme toda a resposta em lista numerada" not in SYSTEM_PROMPT:
+    SYSTEM_PROMPT = f"{SYSTEM_PROMPT}\n\n{_RESPONSE_FORMAT_OVERRIDE}"
+
 # System prompt variante para Teams (renderiza tabelas Markdown, ao contrario do Discord)
 SYSTEM_PROMPT_TEAMS = SYSTEM_PROMPT.replace(
     (
         "- NUNCA use tabelas Markdown (com | e -). O Discord NAO renderiza tabelas.\n"
-        "- Para dados tabulares, use LISTAS com bullet points. Cada item em uma linha separada. Exemplo:\n"
-        "  **Campo X**: valor — descricao\n"
-        "  **Campo Y**: valor — descricao\n"
+        "- Para dados tabulares, use bullets compactos agrupados por categoria. Exemplo:\n"
+        "  **Campo X**: valor - descricao\n"
+        "  **Campo Y**: valor - descricao\n"
+        "- Para mapas de status ou codigos, apresente primeiro uma frase de contexto, depois os codigos em bullets e finalize com a interpretacao pratica.\n"
         "- Se houver muitos campos, agrupe por categoria usando subtitulos em negrito.\n"
     ),
     (
         "- Use tabelas Markdown quando apropriado para apresentar dados tabelares. "
         "O Teams renderiza tabelas corretamente.\n"
+        "- Para mapas de status ou codigos, use tabela Markdown apenas se ela melhorar a leitura; caso contrario, use bullets compactos com contexto antes e interpretacao depois.\n"
         "- Se houver muitos campos, agrupe por categoria usando subtitulos em negrito.\n"
     ),
 )
 
 # Microsoft Teams (sem defaults — credenciais devem estar no .env)
+_TEAMS_FORMAT_OVERRIDE = (
+    "## FORMATO TEAMS\n"
+    "- Use tabelas Markdown quando apropriado para dados realmente tabulares.\n"
+    "- Para mapas de status ou codigos, use tabela Markdown apenas se melhorar a leitura; caso contrario, use bullets compactos com contexto antes e interpretacao depois.\n"
+)
+
+if "Use tabelas Markdown quando apropriado" not in SYSTEM_PROMPT_TEAMS:
+    SYSTEM_PROMPT_TEAMS = f"{SYSTEM_PROMPT_TEAMS}\n\n{_TEAMS_FORMAT_OVERRIDE}"
+
 TEAMS_APP_ID = os.getenv("TEAMS_APP_ID")
 TEAMS_APP_PASSWORD = os.getenv("TEAMS_APP_PASSWORD")
 TEAMS_TENANT_ID = os.getenv("TEAMS_TENANT_ID")
