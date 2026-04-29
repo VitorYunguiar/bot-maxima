@@ -1,12 +1,6 @@
 # Fluxos maxPag - PIX, Pronta Entrega e Reenvio de Pedidos Pagos
 
 > Documento preparado para ingestao em banco vetorial (RAG).
-> Fontes originais:
-> - `C:\Users\vitor\Downloads\MXPEDDV-101181 - Baixa automatica de titulos PIX não sendo realizada.pdf`
-> - `C:\Users\vitor\Downloads\MXPEDDV-111871 - Fluxo reenvio de pedidos maxPag já pagos.pdf`
-> - `C:\Users\vitor\Downloads\MXPEDDV-112014 - Movimentação de estoque Pronta Entrega com MaxPag.pdf`
-> Tickets: MXPEDDV-101181 | MXPEDDV-111871 | MXPEDDV-112014
-> Data de extracao: 2026-04-29
 > Sistema: maxPag | maxPayment | maxPedido | Extrator | IntPDV | Winthor
 > Area: Pagamentos | PIX | Titulos | Estoque | Pronta Entrega | Reenvio de pedidos
 
@@ -25,8 +19,6 @@ Palavras-chave: maxPag, maxPayment, PIX, baixa automatica, JOB_BAIXA_TITULOS, MX
 ---
 
 ## 1. Baixa automatica de titulos PIX nao realizada
-
-Ticket: MXPEDDV-101181.
 
 ### Causa
 
@@ -72,9 +64,9 @@ JOB_BAIXA_TITULOS
 
 Apos habilitar o parametro, reiniciar o extrator do cliente para que ele obtenha a nova configuracao e habilite a job.
 
-### Evidencia visual do PDF
+### Configuracao esperada
 
-O print da Central mostra a tela de cobrancas com a area maxPag, campos de configuracao e indicacao visual para habilitar o parametro `JOB_BAIXA_TITULOS`.
+A Central deve apresentar a area maxPag, os campos de configuracao da cobranca e o parametro `JOB_BAIXA_TITULOS` habilitado.
 
 ---
 
@@ -222,8 +214,6 @@ A tabela `MXSBAIXATITULOS` e preenchida pelo IntPDV com os dados enviados pelo e
 
 ## 2. Reenvio de pedidos maxPag ja pagos
 
-Ticket: MXPEDDV-111871.
-
 ### Causa
 
 Antes, ao reenviar um pedido maxPag, sempre era gerado um novo link de pagamento, mesmo quando o pagamento ja havia sido realizado.
@@ -308,8 +298,6 @@ Atencao. O horario de recebimento de pedidos e XX:XX as YY:YY. O pedido nao foi 
 
 ## 3. Movimentacao de estoque Pronta Entrega com maxPayment
 
-Ticket: MXPEDDV-112014.
-
 ### Causa
 
 Ao enviar um pedido Pronta Entrega com pagamento realizado por maxPayment, o estoque de Pronta Entrega era movimentado antes do pagamento. Se o pedido fosse cancelado ou o link expirasse, o estoque nunca era estornado.
@@ -360,4 +348,3 @@ As informacoes estao na propriedade `DadosProntaEntrega` e sao recuperadas apos 
 ### Projeto envolvido
 
 - ServerPDV / APIVendas.
-

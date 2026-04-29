@@ -1,9 +1,6 @@
 # Registros de ferias incorretos - CONTROLE_MXSUSUARIOS
 
 > Documento preparado para ingestao em banco vetorial (RAG).
-> Fonte original: `C:\Users\vitor\Downloads\MXPEDDV-102590 - Registros de férias incorretos (CONTROLE_MXSUSUARIOS).pdf`
-> Ticket: MXPEDDV-102590
-> Data de extracao: 2026-04-29
 > Sistema: maxGestao | maxPedido | Central de Configuracoes
 > Area: Usuarios | Ferias | Controle de acesso | Normalizacao de dados
 
@@ -91,7 +88,7 @@ END;
 /
 ```
 
-Observacao tecnica: o `ORDER BY` em `SELECT COUNT(*)` foi preservado conforme o PDF. Se houver erro no banco do cliente, validar o script com o DBA antes de executar.
+Observacao tecnica: se houver erro no banco do cliente, validar o script com o DBA antes de executar.
 
 ---
 
@@ -134,13 +131,3 @@ O maxPedido:
 - Permite apenas um cadastro de ferias dentro do periodo para um vendedor.
 - Possui validacao no maxPedido APK para barrar acesso ao maxPedido caso o RCA esteja de ferias.
 - Permite cadastro de ferias retroativo.
-
----
-
-## Evidencia visual do PDF
-
-Os prints mostram:
-
-- Um bloco de script SQL/PLSQL para normalizacao de `CONTROLE_MXSUSUARIOS`.
-- A tela da Central de Configuracoes no menu `Cadastros > Ferias`, listando registros de ferias.
-

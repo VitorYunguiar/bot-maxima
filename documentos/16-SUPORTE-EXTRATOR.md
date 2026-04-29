@@ -1,8 +1,6 @@
 # Documento de Suporte - Extrator
 
 > Documento preparado para ingestao em banco vetorial (RAG).
-> Fonte original: `C:\Users\vitor\Downloads\Documento apoio extrator.pdf`
-> Data de extracao: 2026-04-29
 > Sistema: Extrator | Maxima Solucoes | Portainer | Docker | Oracle
 > Area: Suporte | Infraestrutura | Rede | DNS | Banco de dados | Integracao
 
@@ -14,7 +12,7 @@ Este documento consolida o procedimento de suporte para diagnosticar problemas n
 
 Palavras-chave: extrator, Portainer, Docker, auth.solucoesmaxima.com.br, DNS, firewall, curl, nslookup, resolv.conf, daemon.json, Oracle, SQLPlus, ORA-28000, ORA-12514, ORA-12162, ORA-03135, ORA-20001, GRANTS, PCMETAPROD, lock, v$session, v$locked_object, gv$lock, DBA.
 
-Observacao de seguranca: prints do PDF exibem valores de login, senha e variaveis de ambiente. Esses valores foram omitidos ou mascarados neste arquivo para evitar ingestao de credenciais pelo RAG.
+Observacao de seguranca: valores de login, senha e variaveis de ambiente devem ser omitidos ou mascarados para evitar ingestao de credenciais pelo RAG.
 
 ---
 
@@ -40,9 +38,9 @@ Procure padroes como:
 - TNS NAME nao resolvido.
 - Sessoes bloqueadas no banco de dados.
 
-### Alertas comuns vistos nos prints
+### Alertas comuns
 
-Os prints do PDF mostram exemplos de logs do Extrator com:
+Logs do Extrator podem indicar:
 
 - Erro indicando que a URL `auth.solucoesmaxima.com.br` esta bloqueada para acesso do extrator.
 - Erro de transporte de rede, com falha de conexao do endereco de transporte TCP.
@@ -79,7 +77,7 @@ curl -I http://auth.solucoesmaxima.com.br
 - HTTP 200 ou HTTP 301 com redirecionamento.
 - Resposta em ate 5 segundos.
 
-Exemplo de sucesso visto no PDF:
+Resultado esperado de sucesso:
 
 ```text
 HTTP/1.1 301 Moved Permanently
@@ -115,7 +113,7 @@ nslookup auth.solucoesmaxima.com.br
 
 ### Resultado esperado de sucesso
 
-Exemplo visto no PDF:
+Resultado esperado:
 
 ```text
 Server:   1.1.1.1
@@ -235,9 +233,9 @@ service docker restart
 
 Importante: sempre reinicie o extrator apos alterar configuracoes do Docker.
 
-### Evidencia visual do PDF
+### Falha de deploy por DNS
 
-O print do Portainer mostra uma falha ao fazer deploy de uma stack do Extrator. A mensagem indica erro ao baixar imagem do Docker Registry por problema temporario de resolucao de nome:
+Uma falha ao fazer deploy de uma stack do Extrator pode indicar erro ao baixar imagem do Docker Registry por problema temporario de resolucao de nome:
 
 ```text
 failed to deploy a stack
@@ -248,7 +246,7 @@ Get "https://registry-1.docker.io/v2/": dial tcp: lookup registry-1.docker.io:
 Temporary failure in name resolution
 ```
 
-Esse print reforca que falhas de deploy/pull no Portainer podem ser causadas por DNS incorreto.
+Falhas de deploy/pull no Portainer podem ser causadas por DNS incorreto.
 
 ---
 
@@ -268,9 +266,9 @@ Use este diagnostico quando houver erros de autenticacao ou acesso negado ao ban
 3. Solicitar ao DBA que desbloqueie o usuario, se necessario.
 4. Testar o acesso ao banco local do cliente com as credenciais.
 
-### Evidencia visual do PDF
+### Exemplo de erro Oracle
 
-O print mostra um cliente Oracle/SQL com:
+Um erro comum em cliente Oracle/SQL pode aparecer com:
 
 - User/schema: `MAXSOLUCOES`.
 - Host: `192.168.1.200`.
@@ -278,7 +276,7 @@ O print mostra um cliente Oracle/SQL com:
 - Service Name: `WINT`.
 - Erro exibido: `ORA-28000: the account is locked`.
 
-Nao ingerir nem reproduzir a senha exibida no print.
+Nao ingerir nem reproduzir senhas em documentacao ou base vetorial.
 
 ---
 
@@ -305,7 +303,7 @@ SELECT name FROM v$services;
 SELECT value FROM v$parameter WHERE name = 'service_names';
 ```
 
-O print do PDF mostra a consulta `SELECT value FROM v$parameter WHERE name = 'service_names';` retornando o valor `BDMAXIMA`. Esse resultado confirma qual e o ServiceName correto.
+A consulta `SELECT value FROM v$parameter WHERE name = 'service_names';` pode retornar um valor como `BDMAXIMA`. Esse resultado confirma qual e o ServiceName correto.
 
 3. Tentar conectar no banco com as informacoes coletadas.
 4. Se conectar normalmente no banco, mas o extrator nao conseguir, testar a comunicacao via Linux instalando o SQLPlus.
@@ -330,7 +328,7 @@ export LD_LIBRARY_PATH=$ORACLE_HOME
 export PATH=$ORACLE_HOME:$PATH
 ```
 
-Observacao: o PDF mostra o link `instantclient/2114000` truncado visualmente. Validar o URL exato do Instant Client antes de executar em ambiente real.
+Observacao: validar o URL exato do Instant Client antes de executar em ambiente real.
 
 ### Testar conexao pelo Linux
 
@@ -354,7 +352,7 @@ Se conectar com sucesso via SQLPlus, o DBA precisa atuar e disponibilizar o aces
 
 Solicitar ao DBA para revisar a configuracao do TNS name e permissoes.
 
-Erros vistos nos prints:
+Erros comuns:
 
 ```text
 ORA-12514: TNS:listener does not currently know of service requested in connect descriptor
@@ -378,7 +376,7 @@ Use este diagnostico quando aparecerem erros no log relacionados a permissao no 
 
 ### Sintomas
 
-Exemplos do PDF:
+Exemplos de sintomas:
 
 ```text
 ORA-20001: Falta permissao INSERT na tabela PCMETAPROD
@@ -412,7 +410,7 @@ Existem sessoes bloqueadas ou em lock no banco, impedindo o fluxo.
 
 O script `VerificarSessions.sql` verifica todas as sessoes e locks.
 
-Observacao: no PDF, algumas linhas longas do SQL aparecem truncadas visualmente. O bloco abaixo preserva o conteudo legivel do documento e deve ser validado antes de execucao.
+Observacao: algumas linhas longas de SQL podem variar por ambiente. Validar o bloco antes de executar.
 
 ```sql
 SELECT DISTINCT
@@ -455,7 +453,7 @@ ORDER BY SES.LAST_CALL_ET DESC;
 
 O script `VerificarObjetosLock.sql` verifica objetos bloqueados.
 
-Observacao: no PDF, algumas linhas longas do SQL aparecem truncadas visualmente. O bloco abaixo preserva o conteudo legivel do documento e deve ser validado antes de execucao.
+Observacao: algumas linhas longas de SQL podem variar por ambiente. Validar o bloco antes de executar.
 
 ```sql
 SELECT
@@ -539,4 +537,3 @@ Se o log cita `TNS`, `connect identifier`, `ORA-12514`, `ORA-12162` ou `ORA-0313
 Se o log cita `ORA-20001` e falta de permissao `INSERT`, `UPDATE` ou `DELETE` em tabela, execute o fluxo de GRANTS.
 
 Se os logs parecem normais, mas o extrator nao integra dados, investigue locks no banco usando os scripts de sessao e objetos bloqueados.
-

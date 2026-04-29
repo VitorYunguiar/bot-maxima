@@ -1,9 +1,6 @@
 # Fluxo de pedidos com sistema GERA
 
 > Documento preparado para ingestao em banco vetorial (RAG).
-> Fonte original: `C:\Users\vitor\Downloads\MXPEDDV-112450 - Fluxo para Pedidos GERA.pdf`
-> Tickets: MXPEDDV-112450 | MXPEDDV-113119 | MXPEDDV-113165
-> Data de extracao: 2026-04-29
 > Sistema: maxPedido | GERA | maxPag | APIVendas | APIResumo | APITimeline
 > Area: Integracao de pedidos | Campanhas progressivas | Logs | maxPayment
 
@@ -190,7 +187,7 @@ Testar:
 
 ## Exemplo de JSON de log - estrutura geral
 
-O PDF traz um JSON longo de exemplo para armazenamento em `MXSPEDIDOGERALOG`. Os principais campos do payload sao:
+A estrutura abaixo representa um exemplo de payload para armazenamento em `MXSPEDIDOGERALOG`. Os principais campos sao:
 
 ```json
 {
@@ -438,4 +435,3 @@ Campos e significados para busca no RAG:
 | industryItemsOutsideQuota | Itens fora de cota |
 | statusDetail | Status detalhado do retorno por industria |
 | messages | Mensagens gerais do retorno |
-
