@@ -774,6 +774,31 @@ def _enforce_sources_section_only(
     return sources_block, cited_sources
 
 
+def _append_retrieved_sources_when_missing(
+    answer: str,
+    *,
+    allowed_sources: set[str] | None,
+    source_display_map: dict[str, str] | None = None,
+) -> tuple[str, set[str]]:
+    text = (answer or "").strip()
+    if not text or text.startswith(config.NO_ANSWER_PHRASE):
+        return text, set()
+
+    sources = sorted(source for source in (allowed_sources or set()) if source)
+    if not sources:
+        return text, set()
+
+    body = _strip_sources_section(text).strip()
+    sources_lines = [
+        f"- {(source_display_map or {}).get(source, source)}"
+        for source in sources
+    ]
+    sources_block = "Fontes:\n" + "\n".join(sources_lines)
+    if body:
+        return f"{body}\n\n{sources_block}", set(sources)
+    return sources_block, set(sources)
+
+
 def _line_has_citation(line: str) -> bool:
     return bool(_CITATION_INLINE_RE.search(line))
 
@@ -2497,6 +2522,12 @@ def _apply_grounding_regeneration(
         allowed_sources=allowed_sources,
         source_display_map=source_display_map,
     )
+    if not normalized_cited and allowed_sources:
+        normalized_answer, normalized_cited = _append_retrieved_sources_when_missing(
+            normalized_answer,
+            allowed_sources=allowed_sources,
+            source_display_map=source_display_map,
+        )
 
     if not config.RAG_ENABLE_GROUNDING_VALIDATION:
         cited = normalized_cited or _extract_cited_sources(normalized_answer)
@@ -2546,6 +2577,12 @@ def _apply_grounding_regeneration(
             allowed_sources=allowed_sources,
             source_display_map=source_display_map,
         )
+        if not revised_citations and allowed_sources:
+            revised_answer, revised_citations = _append_retrieved_sources_when_missing(
+                revised_answer,
+                allowed_sources=allowed_sources,
+                source_display_map=source_display_map,
+            )
         valid, revised_errors, revised_citations = _validate_grounded_answer(
             answer=revised_answer,
             allowed_sources=allowed_sources,
@@ -2568,6 +2605,12 @@ def _apply_grounding_regeneration(
         allowed_sources=allowed_sources,
         source_display_map=source_display_map,
     )
+    if not revised_citations and allowed_sources:
+        best_answer, revised_citations = _append_retrieved_sources_when_missing(
+            best_answer,
+            allowed_sources=allowed_sources,
+            source_display_map=source_display_map,
+        )
     return best_answer, revised_errors, revised_citations, regeneration_attempts
 
 

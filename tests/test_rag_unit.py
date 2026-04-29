@@ -270,6 +270,36 @@ class TestOpenAIExtraction(unittest.TestCase):
 
 
 class TestGroundingFallbackBehavior(unittest.TestCase):
+    def test_appends_retrieved_sources_when_model_omits_sources(self):
+        answer = "O modulo GERA integra regras comerciais, ofertas e descontos ao maxPedido."
+
+        with patch.multiple(
+            config,
+            RAG_ENABLE_GROUNDING_VALIDATION=True,
+            RAG_REQUIRE_SOURCES_SECTION=True,
+            RAG_MAX_REGEN_ATTEMPTS=1,
+        ), patch("rag._ask_model") as ask_model_mock:
+            revised_answer, errors, cited, attempts = rag._apply_grounding_regeneration(
+                answer=answer,
+                question="Como trabalhar com o modulo GERA?",
+                system="system",
+                conversation_history=[],
+                images=[],
+                allowed_sources={"21-ms-hub-gera-maxpedido.md", "15-fluxo-pedidos-gera.md"},
+                source_display_map={
+                    "21-ms-hub-gera-maxpedido.md": "21-MS-HUB-GERA-MAXPEDIDO.md",
+                    "15-fluxo-pedidos-gera.md": "15-FLUXO-PEDIDOS-GERA.md",
+                },
+            )
+
+        ask_model_mock.assert_not_called()
+        self.assertEqual(errors, [])
+        self.assertEqual(attempts, 0)
+        self.assertIn("Fontes:", revised_answer)
+        self.assertIn("- 21-MS-HUB-GERA-MAXPEDIDO.md", revised_answer)
+        self.assertIn("21-ms-hub-gera-maxpedido.md", cited)
+        self.assertFalse(revised_answer.startswith(config.NO_ANSWER_PHRASE))
+
     def test_keeps_answer_when_only_non_critical_grounding_error(self):
         answer = "Conta corrente usa este fluxo [fonte: guia.md].\n\nFontes:\n- guia.md"
         non_critical_error = ["Foram detectadas afirmacoes factuais sem citacao inline."]
