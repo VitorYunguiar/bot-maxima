@@ -10,6 +10,15 @@ from collections import OrderedDict
 
 import config
 
+_NUMBERED_LINE_RE = re.compile(r"^(\s*)(\d{1,3})[.)]\s+(.+?)\s*$")
+_SOURCES_HEADING_RE = re.compile(r"^\s*fontes?\s*:\s*$", re.IGNORECASE)
+_TITLE_PREFIX_RE = re.compile(
+    r"^(como|quando|onde|por que|porque|causa|causas|solucao|solucoes|"
+    r"diagnostico|validacao|requisitos|parametros|fluxo|resumo|"
+    r"observacoes|tabelas|campos|status)\b",
+    re.IGNORECASE,
+)
+
 
 class ConversationManager:
     """Gerencia historico de conversa por canal/conversa com LRU e cooldown por usuario."""
@@ -75,3 +84,106 @@ def split_message(text: str, limit: int) -> list[str]:
         parts.append(text[:split_at])
         text = text[split_at:].lstrip("\n ")
     return parts
+
+
+def _is_title_like_numbered_line(body: str) -> bool:
+    clean = body.strip().rstrip(":")
+    if not clean:
+        return False
+    if len(clean) > 90:
+        return False
+    if clean.endswith((".", ";", ",")):
+        return False
+    if _TITLE_PREFIX_RE.search(clean):
+        return True
+    # Linhas curtas sem verbo forte costumam ser subtitulos que o modelo numerou.
+    return len(clean.split()) <= 6 and not re.match(
+        r"^(confirmar|validar|verificar|consultar|executar|acionar|solicitar|"
+        r"abrir|reiniciar|configurar|habilitar|desabilitar)\b",
+        clean,
+        flags=re.IGNORECASE,
+    )
+
+
+def normalize_over_numbered_response(text: str) -> str:
+    """Remove numeracao excessiva que o LLM as vezes copia dos documentos.
+
+    Preserva listas numeradas curtas, que normalmente representam passo a passo real.
+    Quando a resposta vem com muitos itens numerados, reinicios ou numeros quebrados,
+    converte os itens em bullets e promove linhas com cara de secao para subtitulos.
+    """
+    if not isinstance(text, str) or not text.strip():
+        return text
+
+    lines = text.splitlines()
+    numbered: list[tuple[int, int, str]] = []
+    content_lines = 0
+    in_code = False
+
+    for idx, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            in_code = not in_code
+            continue
+        if in_code or not stripped:
+            continue
+        content_lines += 1
+        match = _NUMBERED_LINE_RE.match(line)
+        if match:
+            numbered.append((idx, int(match.group(2)), match.group(3).strip()))
+
+    if len(numbered) < 5:
+        return text
+
+    numbers = [number for _, number, _ in numbered]
+    sequence_breaks = sum(
+        1
+        for previous, current in zip(numbers, numbers[1:])
+        if current != previous + 1
+    )
+    starts_mid_sequence = numbers[0] != 1
+    density = len(numbered) / max(content_lines, 1)
+    title_like_count = sum(1 for _, _, body in numbered if _is_title_like_numbered_line(body))
+
+    over_numbered = (
+        starts_mid_sequence
+        or sequence_breaks >= 1
+        or (len(numbered) >= 10 and density >= 0.45 and title_like_count >= 1)
+    )
+    if not over_numbered:
+        return text
+
+    normalized: list[str] = []
+    in_code = False
+    in_sources = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            in_code = not in_code
+            normalized.append(line)
+            continue
+        if in_code:
+            normalized.append(line)
+            continue
+        if _SOURCES_HEADING_RE.match(line):
+            in_sources = True
+            normalized.append(line)
+            continue
+
+        match = _NUMBERED_LINE_RE.match(line)
+        if not match:
+            normalized.append(line)
+            continue
+
+        indent, body = match.group(1), match.group(3).strip()
+        if not body:
+            normalized.append(line)
+            continue
+        if in_sources:
+            normalized.append(f"{indent}- {body}")
+        elif _is_title_like_numbered_line(body):
+            normalized.append(f"{indent}**{body.rstrip(':')}**")
+        else:
+            normalized.append(f"{indent}- {body}")
+
+    return "\n".join(normalized)

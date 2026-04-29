@@ -4,6 +4,7 @@ from unittest.mock import patch
 import config
 import db
 import rag
+from bot_common import normalize_over_numbered_response
 
 
 class TestIntentRouting(unittest.TestCase):
@@ -33,6 +34,40 @@ class TestPromptFormatting(unittest.TestCase):
         instruction = rag._intent_response_instruction({"intent": "troubleshooting"})
 
         self.assertIn("Use checklist apenas nas verificacoes praticas", instruction)
+
+
+class TestDiscordResponseFormatting(unittest.TestCase):
+    def test_normalizes_pathological_numbered_sections(self):
+        answer = (
+            "7. Portfolio recomendado/mix.\n"
+            "8. Status de fechamento e autorizacoes comerciais.\n"
+            "9. Filtragem de produtos pela aba Tabela.\n\n"
+            "4. Como diagnosticar quando nao funciona\n"
+            "5. Confirmar se `HABILITA_SISTEMA_GERA` esta ativo.\n"
+            "6. Validar `CNPJ_SISTEMA_GERA`.\n\n"
+            "5. Quando acionar suporte\n"
+            "6. Acionar Suporte Gera:\n"
+            "7. Hub Gera fora do ar.\n"
+            "8. Erro de autenticacao ou token.\n\n"
+            "Fontes:\n"
+            "1. MS-HUB-GERA-MAXPEDIDO.md"
+        )
+
+        normalized = normalize_over_numbered_response(answer)
+
+        self.assertNotRegex(normalized, r"(?m)^\d+[.)]\s")
+        self.assertIn("**Como diagnosticar quando nao funciona**", normalized)
+        self.assertIn("- Confirmar se `HABILITA_SISTEMA_GERA` esta ativo.", normalized)
+        self.assertIn("- MS-HUB-GERA-MAXPEDIDO.md", normalized)
+
+    def test_preserves_short_step_by_step(self):
+        answer = (
+            "1. Abra a Central de Configuracoes.\n"
+            "2. Habilite o parametro documentado.\n"
+            "3. Reinicie o extrator."
+        )
+
+        self.assertEqual(normalize_over_numbered_response(answer), answer)
 
 
 class TestStrictAbstain(unittest.TestCase):

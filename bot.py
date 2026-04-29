@@ -16,7 +16,7 @@ from discord.ext import commands
 import config
 from db import validate_database_config
 import rag
-from bot_common import ConversationManager, split_message
+from bot_common import ConversationManager, normalize_over_numbered_response, split_message
 from ingest import ingest_directory
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -342,8 +342,8 @@ async def handle_question(target, user_id: int, channel_id: int, question: str, 
                 None, rag.log_knowledge_gap, question, max_sim, "discord"
             )
 
-        # Formatar e enviar (converter tabelas Markdown para code blocks)
-        response = _markdown_table_to_codeblock(answer_text)
+        # Formatar e enviar (normalizar listas numeradas excessivas e tabelas Markdown)
+        response = _markdown_table_to_codeblock(normalize_over_numbered_response(answer_text))
         await send_split_response(target, response)
 
 
