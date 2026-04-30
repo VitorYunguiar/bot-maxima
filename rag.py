@@ -256,7 +256,10 @@ INTENT_RESPONSE_INSTRUCTIONS = {
 }
 
 _CITATION_INLINE_RE = re.compile(r"\[fonte:\s*([^\]]+)\]", flags=re.IGNORECASE)
-_SOURCES_SECTION_RE = re.compile(r"^\s*fontes?\s*:", flags=re.IGNORECASE | re.MULTILINE)
+_SOURCES_SECTION_RE = re.compile(
+    r"^\s*(?:#{1,6}\s*)?(?:\*\*|__)?\s*fontes?\s*:?\s*(?:\*\*|__)?\s*:?\s*$",
+    flags=re.IGNORECASE | re.MULTILINE,
+)
 _FACTUAL_LINE_RE = re.compile(
     r"(?:\b(select|update|insert|delete|from|join|where|tabela|campo|coluna|menu|tela|parametro|rotina|erro|codigo)\b|\d)",
     flags=re.IGNORECASE,
@@ -716,8 +719,9 @@ def _extract_cited_sources(answer: str) -> set[str]:
             in_sources_section = True
             continue
         if in_sources_section:
-            if line.startswith("-"):
-                source = _normalize_source_name(line.lstrip("- ").split("(", 1)[0])
+            source_item = re.match(r"^(?:[-*•]\s+|\d+[.)]\s+)(.+)$", line)
+            if source_item:
+                source = _normalize_source_name(source_item.group(1).split("(", 1)[0])
                 if source:
                     cited.add(source)
                 continue

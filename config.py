@@ -91,7 +91,7 @@ BUSINESS_RULES_FILE = os.getenv(
     "BUSINESS_RULES_FILE",
     "./bootstrap/00-DOCUMENTO-PRINCIPAL.md",
 )
-BUSINESS_RULES_MAX_CHARS = _env_int("BUSINESS_RULES_MAX_CHARS", 8000)
+BUSINESS_RULES_MAX_CHARS = _env_int("BUSINESS_RULES_MAX_CHARS", 80000)
 
 # Full Context Mode — injeta todos os documentos no contexto (estilo Claude Projects)
 FULL_CONTEXT_ENABLED = _env_bool("FULL_CONTEXT_ENABLED", False)
@@ -406,7 +406,7 @@ def validate(platform: str = "discord"):
     _check_range("RERANKER_MAX_CANDIDATES", RERANKER_MAX_CANDIDATES, min_val=2, max_val=80)
     _check_range("RERANKER_MIN_TRIGGER_SIM", RERANKER_MIN_TRIGGER_SIM, min_val=0.0, max_val=1.0)
     _check_range("RERANKER_MAX_TRIGGER_SIM", RERANKER_MAX_TRIGGER_SIM, min_val=0.0, max_val=1.0)
-    _check_range("BUSINESS_RULES_MAX_CHARS", BUSINESS_RULES_MAX_CHARS, min_val=500, max_val=40000)
+    _check_range("BUSINESS_RULES_MAX_CHARS", BUSINESS_RULES_MAX_CHARS, min_val=500, max_val=200000)
     _check_range("COOLDOWN_SECONDS", COOLDOWN_SECONDS, min_val=0)
     _check_range("ASK_TIMEOUT_SECONDS", ASK_TIMEOUT_SECONDS, min_val=5)
     _check_range("MAX_HISTORY_PAIRS", MAX_HISTORY_PAIRS, min_val=1)

@@ -46,6 +46,10 @@ Saida gerada em `teams_manifest/build/`:
 
 ## Subir o bot
 
+Em producao, o bot roda no servidor Linux. Esta maquina nao executa mais o
+runtime do Teams; ela serve para editar, testar o que for local e enviar
+atualizacoes para o repositorio. O servidor recebe as mudancas com `git pull`.
+
 ```powershell
 iniciar_teams.bat
 ```
@@ -59,8 +63,8 @@ Ou:
 
 ## Configuracao externa
 
-- Publique a URL do bot apontando para `http(s)://<seu-host>:<TEAMS_PORT>/api/messages`
-- Para testes locais, exponha a porta com `ngrok http <TEAMS_PORT>`
+- Publique a URL do bot apontando para `https://<host-publico>:<TEAMS_PORT>/api/messages`
+- Nao use `ngrok` neste ambiente; a porta deve ficar aberta no servidor Linux que hospeda o bot
 - No Azure Bot, configure o endpoint `/api/messages`
 - Importe `teams_manifest/build/bot-azure.zip` no Teams
 
@@ -69,3 +73,4 @@ Ou:
 - O `TEAMS_APP_ID` e usado tanto no runtime quanto no `manifest.id` e no `bots[].botId`
 - O fluxo novo usa `teams_manifest/manifest.template.json` como fonte versionada
 - Os artefatos gerados em `teams_manifest/build/` sao os arquivos para publicar
+- Mudancas de codigo devem ser versionadas e aplicadas no servidor via `git pull`

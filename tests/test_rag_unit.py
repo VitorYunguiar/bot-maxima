@@ -1,4 +1,6 @@
 ﻿import unittest
+import tempfile
+from pathlib import Path
 from unittest.mock import patch
 
 import config
@@ -158,6 +160,28 @@ class TestCitationFormatting(unittest.TestCase):
         self.assertIn("- PARAMETROS.md", formatted)
         self.assertEqual(cited, {"guia-maxpedido.md", "parametros.md"})
 
+    def test_removes_bold_sources_section_before_rebuilding_sources(self):
+        answer = (
+            "O pedido precisa ser validado na integracao.\n\n"
+            "**Fontes:**\n"
+            "- `01-LAYOUT-INTEGRACAO.md`\n"
+            "- `03-GATEKEEPER-CASOS_RESOLVIDOS.md`"
+        )
+
+        formatted, cited = rag._enforce_sources_section_only(
+            answer,
+            allowed_sources={"01-layout-integracao.md", "03-gatekeeper-casos_resolvidos.md"},
+            source_display_map={
+                "01-layout-integracao.md": "01-LAYOUT-INTEGRACAO.md",
+                "03-gatekeeper-casos_resolvidos.md": "03-GATEKEEPER-CASOS_RESOLVIDOS.md",
+            },
+        )
+
+        self.assertEqual(formatted.count("Fontes:"), 1)
+        self.assertNotIn("**Fontes:**", formatted)
+        self.assertIn("- 01-LAYOUT-INTEGRACAO.md", formatted)
+        self.assertEqual(cited, {"01-layout-integracao.md", "03-gatekeeper-casos_resolvidos.md"})
+
 
 class TestAnalyticalContextFormatting(unittest.TestCase):
     def test_build_context_includes_analytical_block_before_evidence(self):
@@ -224,6 +248,30 @@ class TestAnalyticalContextFormatting(unittest.TestCase):
         self.assertIn("dominante.md", context)
         self.assertIn("diverso.md", context)
         self.assertLessEqual(context.count("Trecho dominante"), 3)
+
+
+class TestBusinessRulesContext(unittest.TestCase):
+    def test_loads_full_business_rules_when_limit_allows_file_size(self):
+        original_cache = rag._business_rules_cache
+        rag._business_rules_cache = None
+
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                rules_path = Path(tmpdir) / "rules.md"
+                rules_text = "regra de negocio\n" * 4000
+                rules_path.write_text(rules_text, encoding="utf-8")
+
+                with patch.multiple(
+                    config,
+                    RAG_ENABLE_BUSINESS_RULES=True,
+                    BUSINESS_RULES_FILE=str(rules_path),
+                    BUSINESS_RULES_MAX_CHARS=80000,
+                ):
+                    loaded = rag._load_business_rules_context()
+
+            self.assertEqual(loaded, rules_text.strip())
+        finally:
+            rag._business_rules_cache = original_cache
 
 
 class TestRerankPolicy(unittest.TestCase):

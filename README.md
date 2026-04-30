@@ -99,6 +99,9 @@ docker compose --profile tools run --rm teams_package
 ## Observacoes de implantacao
 
 - o endpoint do Teams precisa ser HTTPS publico
+- o bot do Teams roda no servidor Linux; esta maquina nao executa mais o runtime
+- o servidor recebe atualizacoes do projeto via `git pull`
+- nao usar `ngrok` neste ambiente; a porta deve ficar aberta/publicada no servidor Linux
 - para ambiente corporativo, o ideal e hospedar em infraestrutura da empresa ou Azure
 - `documentos/` nao e versionado; se a operacao depender de ingestao local ou base documental local,
   copie essa pasta separadamente para a maquina nova
