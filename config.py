@@ -5,9 +5,10 @@ config.py - Configuracoes centralizadas carregadas do .env
 import os
 import re
 from pathlib import Path
-from dotenv import load_dotenv
+from dotenv import dotenv_values, load_dotenv
 
-load_dotenv()
+ENV_FILE = Path(__file__).with_name(".env")
+load_dotenv(dotenv_path=ENV_FILE)
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -41,6 +42,10 @@ def _env_float(name: str, default: float) -> float:
         )
 
 
+def _env_file_value(name: str) -> str | None:
+    return dotenv_values(ENV_FILE).get(name)
+
+
 # Discord
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 COMMAND_PREFIX = os.getenv("COMMAND_PREFIX", "!")
@@ -55,7 +60,7 @@ if _embedding_provider_raw is None or not _embedding_provider_raw.strip():
     EMBEDDING_PROVIDER = LLM_PROVIDER
 else:
     EMBEDDING_PROVIDER = _embedding_provider_raw.strip().lower()
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_API_KEY = _env_file_value("OPENAI_API_KEY")
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.4")
 OPENAI_REFORMULATION_MODEL = os.getenv("OPENAI_REFORMULATION_MODEL", "gpt-5.4-mini")
