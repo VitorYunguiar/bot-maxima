@@ -63,10 +63,39 @@ Ou:
 
 ## Configuracao externa
 
-- Publique a URL do bot apontando para `https://<host-publico>:<TEAMS_PORT>/api/messages`
-- Nao use `ngrok` neste ambiente; a porta deve ficar aberta no servidor Linux que hospeda o bot
-- No Azure Bot, configure o endpoint `/api/messages`
+- O bot Teams continua ouvindo internamente em `TEAMS_PORT=3978`
+- O proxy HTTPS publica o bot em `https://sabidao.maximatech.com.br:8443/api/messages`
+- No Azure Bot, configure o Messaging endpoint exatamente como `https://sabidao.maximatech.com.br:8443/api/messages`
+- Nao use `ngrok` neste ambiente; a porta publica `8443` deve ficar liberada no firewall/NAT
 - Importe `teams_manifest/build/bot-azure.zip` no Teams
+
+## Proxy HTTPS
+
+O `docker-compose.yml` sobe o servico `teams_https_proxy` com nginx:
+
+- escuta em `sabidao.maximatech.com.br:8443`
+- usa certificados em `docker/nginx/certs/fullchain.pem` e `docker/nginx/certs/privkey.pem`
+- encaminha `/api/messages` e `/api/health` para `127.0.0.1:3978`
+- publica o bot Teams em `127.0.0.1:3978`, sem expor a porta 3978 diretamente na rede
+
+Antes de subir o proxy, coloque um certificado TLS valido para o dominio/endpoint nesses arquivos:
+
+```text
+docker/nginx/certs/fullchain.pem
+docker/nginx/certs/privkey.pem
+```
+
+Para subir o Teams com HTTPS:
+
+```powershell
+docker compose up -d teams_bot teams_https_proxy
+```
+
+Para testar no servidor:
+
+```powershell
+curl -k https://sabidao.maximatech.com.br:8443/api/health
+```
 
 ## Observacoes
 

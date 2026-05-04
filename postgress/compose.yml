@@ -1,0 +1,30 @@
+# PostgreSQL + Adminer
+services:
+  db:
+    #    image: postgres:17.6
+    image: pgvector/pgvector:pg17
+    restart: always
+    shm_size: 128mb
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: sabidao
+      POSTGRES_PASSWORD: 54bsaf3@26#$
+      POSTGRES_DB: sabidao
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - ./postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sabidao -d sabidao"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  adminer:
+    image: adminer
+    restart: always
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy

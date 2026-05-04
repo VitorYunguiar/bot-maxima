@@ -14,6 +14,8 @@ documentos/
 ingest_failures.json
 teams_manifest/build/
 runtime/
+docker/nginx/certs/*
+!docker/nginx/certs/.gitkeep
 
 # IDE
 .vscode/

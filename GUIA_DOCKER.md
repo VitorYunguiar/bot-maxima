@@ -155,10 +155,18 @@ Resultado esperado:
 O `Messaging endpoint` do Azure Bot deve apontar para:
 
 ```text
-https://SEU-DOMINIO-Ou-REVERSE-PROXY/api/messages
+https://sabidao.maximatech.com.br:8443/api/messages
 ```
 
-Se voce publicar direto da maquina com NAT/reverse proxy corporativo, a TI precisa expor a porta 3978 com HTTPS.
+O container do bot Teams fica publicado apenas no loopback do servidor em
+`127.0.0.1:3978`. O HTTPS publico fica no servico `teams_https_proxy`, que escuta
+em `sabidao.maximatech.com.br:8443` e encaminha para `127.0.0.1:3978`. Coloque os certificados
+TLS em:
+
+```text
+docker/nginx/certs/fullchain.pem
+docker/nginx/certs/privkey.pem
+```
 
 ## 12. Parar tudo
 
