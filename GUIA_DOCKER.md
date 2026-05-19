@@ -155,12 +155,12 @@ Resultado esperado:
 O `Messaging endpoint` do Azure Bot deve apontar para:
 
 ```text
-https://sabidao.maximatech.com.br:8443/api/messages
+https://sabidao.maximatech.com.br:7443/api/messages
 ```
 
 O container do bot Teams fica publicado apenas no loopback do servidor em
 `127.0.0.1:3978`. O HTTPS publico fica no servico `teams_https_proxy`, que escuta
-em `sabidao.maximatech.com.br:8443` e encaminha para `127.0.0.1:3978`. Coloque os certificados
+em `sabidao.maximatech.com.br:7443` e encaminha para `127.0.0.1:3978`. Coloque os certificados
 TLS em:
 
 ```text

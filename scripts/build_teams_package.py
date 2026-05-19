@@ -1,4 +1,4 @@
-"""
+r"""
 Gera o pacote do Microsoft Teams a partir do .env.
 
 Uso:

@@ -1,4 +1,4 @@
-"""
+r"""
 bot_teams.py — Bot Microsoft Teams com RAG, usando a mesma base do bot Discord.
 
 Uso:
