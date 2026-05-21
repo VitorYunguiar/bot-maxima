@@ -7,6 +7,7 @@ Configure no `.env`:
 - `TEAMS_APP_ID`
 - `TEAMS_APP_PASSWORD`
 - `TEAMS_TENANT_ID`
+- `TEAMS_APP_TYPE` (`SingleTenant` neste ambiente)
 - `TEAMS_ADMIN_IDS`
 - `TEAMS_PORT`
 - `TEAMS_MANIFEST_SHORT_NAME`
@@ -20,6 +21,15 @@ Configure no `.env`:
 - `TEAMS_MANIFEST_ACCENT_COLOR`
 
 Use o `.env.example` como base.
+
+O runtime tambem aceita os nomes padrao do Azure Bot:
+
+- `MicrosoftAppId`
+- `MicrosoftAppPassword`
+- `MicrosoftAppTenantId`
+- `MicrosoftAppType`
+
+Se os dois formatos existirem, os valores `TEAMS_*` tem prioridade.
 
 ## Instalar dependencias
 
@@ -99,7 +109,7 @@ curl -k https://sabidao.maximatech.com.br:7443/api/health
 
 ## Observacoes
 
-- O `TEAMS_APP_ID` e usado tanto no runtime quanto no `manifest.id` e no `bots[].botId`
+- O `TEAMS_APP_ID` ou `MicrosoftAppId` e usado tanto no runtime quanto no `manifest.id` e no `bots[].botId`
 - O fluxo novo usa `teams_manifest/manifest.template.json` como fonte versionada
 - Os artefatos gerados em `teams_manifest/build/` sao os arquivos para publicar
 - Mudancas de codigo devem ser versionadas e aplicadas no servidor via `git pull`

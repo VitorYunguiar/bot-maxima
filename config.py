@@ -42,6 +42,14 @@ def _env_float(name: str, default: float) -> float:
         )
 
 
+def _env_first(*names: str, default: str | None = None) -> str | None:
+    for name in names:
+        value = os.getenv(name)
+        if value:
+            return value
+    return default
+
+
 def _env_file_value(name: str) -> str | None:
     return dotenv_values(ENV_FILE).get(name)
 
@@ -257,9 +265,10 @@ _TEAMS_FORMAT_OVERRIDE = (
 if "Use tabelas Markdown quando apropriado" not in SYSTEM_PROMPT_TEAMS:
     SYSTEM_PROMPT_TEAMS = f"{SYSTEM_PROMPT_TEAMS}\n\n{_TEAMS_FORMAT_OVERRIDE}"
 
-TEAMS_APP_ID = os.getenv("TEAMS_APP_ID")
-TEAMS_APP_PASSWORD = os.getenv("TEAMS_APP_PASSWORD")
-TEAMS_TENANT_ID = os.getenv("TEAMS_TENANT_ID")
+TEAMS_APP_ID = _env_first("TEAMS_APP_ID", "MicrosoftAppId")
+TEAMS_APP_PASSWORD = _env_first("TEAMS_APP_PASSWORD", "MicrosoftAppPassword")
+TEAMS_TENANT_ID = _env_first("TEAMS_TENANT_ID", "MicrosoftAppTenantId")
+TEAMS_APP_TYPE = _env_first("TEAMS_APP_TYPE", "MicrosoftAppType", default="SingleTenant").strip()
 TEAMS_PORT = _env_int("TEAMS_PORT", 3978)
 TEAMS_ADMIN_IDS = [value.strip() for value in os.getenv("TEAMS_ADMIN_IDS", "").split(",") if value.strip()]
 TEAMS_MANIFEST_SHORT_NAME = os.getenv("TEAMS_MANIFEST_SHORT_NAME")

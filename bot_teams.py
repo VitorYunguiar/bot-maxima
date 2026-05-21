@@ -17,6 +17,7 @@ Requer:
 """
 
 import asyncio
+import base64
 import json
 import logging
 import re
@@ -24,12 +25,14 @@ import time
 
 from aiohttp import web
 from botbuilder.core import (
-    BotFrameworkAdapterSettings,
+    BotAdapter,
     BotFrameworkAdapter,
+    BotFrameworkAdapterSettings,
     TurnContext,
     ActivityHandler,
 )
 from botbuilder.schema import Activity, ActivityTypes
+from botframework.connector.auth import MicrosoftAppCredentials
 
 import config
 from db import validate_database_config
@@ -41,6 +44,142 @@ logger = logging.getLogger(__name__)
 
 # Historico e cooldown centralizados
 _conv = ConversationManager()
+
+
+def _short_id(value: str | None) -> str | None:
+    if not value:
+        return None
+    if len(value) <= 12:
+        return value
+    return f"{value[:8]}...{value[-4:]}"
+
+
+def _decode_jwt_claims(auth_header: str) -> dict:
+    if not auth_header.startswith("Bearer "):
+        return {}
+    token = auth_header.split(" ", 1)[1]
+    parts = token.split(".")
+    if len(parts) < 2:
+        return {}
+    payload = parts[1] + "=" * (-len(parts[1]) % 4)
+    try:
+        return json.loads(base64.urlsafe_b64decode(payload.encode("ascii")))
+    except Exception:
+        return {}
+
+
+def _jwt_claims_from_token(token: str) -> dict:
+    parts = token.split(".")
+    if len(parts) < 2:
+        return {}
+    payload = parts[1] + "=" * (-len(parts[1]) % 4)
+    try:
+        return json.loads(base64.urlsafe_b64decode(payload.encode("ascii")))
+    except Exception:
+        return {}
+
+
+def _claim_summary(claims: dict) -> dict:
+    return {
+        "aud": claims.get("aud"),
+        "appid": claims.get("appid") or claims.get("azp"),
+        "iss": claims.get("iss"),
+        "tid": claims.get("tid"),
+        "ver": claims.get("ver"),
+        "nbf": claims.get("nbf"),
+        "exp": claims.get("exp"),
+    }
+
+
+def _activity_diagnostics(activity: Activity, auth_header: str) -> dict:
+    channel_data = activity.channel_data if isinstance(activity.channel_data, dict) else {}
+    tenant = channel_data.get("tenant") if isinstance(channel_data.get("tenant"), dict) else {}
+    claims = _decode_jwt_claims(auth_header)
+    return {
+        "activity_type": activity.type,
+        "activity_id": _short_id(activity.id),
+        "channel_id": activity.channel_id,
+        "service_url": activity.service_url,
+        "conversation_id": _short_id(getattr(activity.conversation, "id", None)),
+        "conversation_type": getattr(activity.conversation, "conversation_type", None),
+        "recipient_id": getattr(activity.recipient, "id", None),
+        "recipient_name": getattr(activity.recipient, "name", None),
+        "tenant_id": tenant.get("id"),
+        "token_aud": claims.get("aud"),
+        "token_appid": claims.get("appid") or claims.get("azp"),
+        "token_tid": claims.get("tid"),
+    }
+
+
+def _connector_client_diagnostics(context: TurnContext) -> dict:
+    connector_client = context.turn_state.get(BotAdapter.BOT_CONNECTOR_CLIENT_KEY)
+    connector_config = getattr(connector_client, "config", None)
+    credentials = getattr(connector_config, "credentials", None)
+    return {
+        "turn_state_keys": sorted(str(key) for key in context.turn_state.keys()),
+        "oauth_scope": context.turn_state.get(BotAdapter.BOT_OAUTH_SCOPE_KEY),
+        "connector_base_url": getattr(connector_config, "base_url", None),
+        "credential_type": type(credentials).__name__ if credentials else None,
+        "credential_app_id": getattr(credentials, "microsoft_app_id", None),
+        "credential_tenant": getattr(credentials, "tenant", None),
+        "credential_oauth_scope": getattr(credentials, "oauth_scope", None),
+        "credential_oauth_endpoint": getattr(credentials, "oauth_endpoint", None),
+    }
+
+
+def _log_outbound_token_probe(reason: str) -> None:
+    try:
+        credentials = MicrosoftAppCredentials(
+            config.TEAMS_APP_ID,
+            config.TEAMS_APP_PASSWORD,
+            channel_auth_tenant=config.TEAMS_TENANT_ID,
+        )
+        token = credentials.get_access_token(force_refresh=True)
+        logger.info(
+            "Teams outbound token probe (%s): credentials=%s claims=%s",
+            reason,
+            json.dumps(
+                {
+                    "app_id": credentials.microsoft_app_id,
+                    "tenant": credentials.tenant,
+                    "oauth_scope": credentials.oauth_scope,
+                    "oauth_endpoint": credentials.oauth_endpoint,
+                },
+                ensure_ascii=False,
+            ),
+            json.dumps(_claim_summary(_jwt_claims_from_token(token)), ensure_ascii=False),
+        )
+    except Exception as exc:
+        logger.error("Teams outbound token probe failed (%s): %s", reason, exc, exc_info=True)
+
+
+def _normalize_teams_bot_id(value: str | None) -> str | None:
+    if not value:
+        return None
+    return value[3:] if value.startswith("28:") else value
+
+
+class TeamsAdapterConfig:
+    APP_ID = config.TEAMS_APP_ID
+    APP_PASSWORD = config.TEAMS_APP_PASSWORD
+    APP_TYPE = config.TEAMS_APP_TYPE
+    APP_TENANTID = config.TEAMS_TENANT_ID
+    CALLER_ID = "urn:botframework:azure"
+    OAUTH_URL = "https://token.botframework.com"
+    TO_CHANNEL_FROM_BOT_LOGIN_URL = (
+        f"https://login.microsoftonline.com/{config.TEAMS_TENANT_ID}/oauth2/v2.0/token"
+        if config.TEAMS_TENANT_ID
+        else None
+    )
+    TO_CHANNEL_FROM_BOT_OAUTH_SCOPE = "https://api.botframework.com/.default"
+    TO_BOT_FROM_CHANNEL_TOKEN_ISSUER = "https://api.botframework.com"
+    TO_BOT_FROM_CHANNEL_OPENID_METADATA_URL = (
+        "https://login.botframework.com/v1/.well-known/openidconfiguration"
+    )
+    TO_BOT_FROM_EMULATOR_OPENID_METADATA_URL = (
+        "https://login.microsoftonline.com/common/v2.0/.well-known/openid-configuration"
+    )
+    VALIDATE_AUTHORITY = True
 
 
 def _parse_feedback_command_payload(payload: str) -> dict:
@@ -439,6 +578,36 @@ class TeamsBot(ActivityHandler):
 async def on_error(context: TurnContext, error: Exception):
     """Handler global de erros."""
     logger.error("Erro nao tratado: %s", error, exc_info=True)
+    logger.error(
+        "Teams outbound diagnostics: %s",
+        json.dumps(_connector_client_diagnostics(context), ensure_ascii=False),
+    )
+    _log_outbound_token_probe("turn_error")
+    response = getattr(error, "response", None)
+    if response is not None:
+        status_code = getattr(response, "status_code", None)
+        reason = getattr(response, "reason", None)
+        text = getattr(response, "text", "")
+        headers = getattr(response, "headers", {}) or {}
+        diagnostic_headers = {
+            key: value
+            for key, value in headers.items()
+            if key.lower()
+            in {
+                "request-id",
+                "client-request-id",
+                "x-ms-request-id",
+                "x-ms-correlation-request-id",
+                "www-authenticate",
+            }
+        }
+        logger.error(
+            "Bot Framework HTTP error: status=%s reason=%s headers=%s body=%s",
+            status_code,
+            reason,
+            diagnostic_headers,
+            text[:2000] if isinstance(text, str) else text,
+        )
     try:
         await context.send_activity("Ocorreu um erro interno. Tente novamente.")
     except Exception:
@@ -447,12 +616,13 @@ async def on_error(context: TurnContext, error: Exception):
 
 # ── Servidor aiohttp ─────────────────────────────────────
 
-SETTINGS = BotFrameworkAdapterSettings(
-    app_id=config.TEAMS_APP_ID,
-    app_password=config.TEAMS_APP_PASSWORD,
-    channel_auth_tenant=config.TEAMS_TENANT_ID,
+ADAPTER = BotFrameworkAdapter(
+    BotFrameworkAdapterSettings(
+        app_id=config.TEAMS_APP_ID,
+        app_password=config.TEAMS_APP_PASSWORD,
+        channel_auth_tenant=config.TEAMS_TENANT_ID,
+    )
 )
-ADAPTER = BotFrameworkAdapter(SETTINGS)
 ADAPTER.on_turn_error = on_error
 
 BOT = TeamsBot()
@@ -463,16 +633,49 @@ async def messages(req: web.Request) -> web.Response:
     if "application/json" not in req.headers.get("Content-Type", ""):
         return web.Response(status=415)
 
-    body = await req.json()
+    try:
+        body = await req.json()
+    except json.JSONDecodeError:
+        return web.json_response({"error": "invalid_json"}, status=400)
+
     activity = Activity().deserialize(body)
+    if not isinstance(activity.type, str) or not activity.type:
+        return web.json_response(
+            {"error": "invalid_activity", "message": "Missing Bot Framework activity type."},
+            status=400,
+        )
 
     # Ignorar atividades de typing (enviadas enquanto o usuário digita)
     if activity.type == "typing":
         return web.Response(status=200)
 
     auth_header = req.headers.get("Authorization", "")
+    diagnostics = _activity_diagnostics(activity, auth_header)
+    logger.info("Teams activity diagnostics: %s", json.dumps(diagnostics, ensure_ascii=False))
+    recipient_app_id = _normalize_teams_bot_id(getattr(activity.recipient, "id", None))
+    if recipient_app_id and recipient_app_id != config.TEAMS_APP_ID:
+        logger.error(
+            "Teams recipient.id diverge do TEAMS_APP_ID do runtime: recipient_id=%s runtime_app_id=%s",
+            activity.recipient.id,
+            config.TEAMS_APP_ID,
+        )
 
-    await ADAPTER.process_activity(activity, auth_header, BOT.on_turn)
+    try:
+        identity = await ADAPTER._authenticate_request(activity, auth_header)
+        invoke_response = await ADAPTER.process_activity_with_identity(activity, identity, BOT.on_turn)
+    except PermissionError:
+        logger.warning("Requisicao Teams nao autorizada: activity_type=%s", activity.type)
+        return web.Response(status=401)
+    except Exception as e:
+        logger.error("Erro ao processar atividade Teams: %s", e, exc_info=True)
+        return web.json_response({"error": "internal_error"}, status=500)
+
+    if invoke_response:
+        body = invoke_response.body
+        if body is None:
+            return web.Response(status=invoke_response.status)
+        return web.json_response(body, status=invoke_response.status)
+
     return web.Response(status=201)
 
 
@@ -498,6 +701,13 @@ if __name__ == "__main__":
     app = init_app()
 
     logger.info("Iniciando bot Teams na porta %s...", config.TEAMS_PORT)
+    logger.info(
+        "Teams auth config: app_type=%s app_id=%s tenant_id=%s",
+        config.TEAMS_APP_TYPE,
+        config.TEAMS_APP_ID,
+        config.TEAMS_TENANT_ID,
+    )
+    _log_outbound_token_probe("startup")
     logger.info("Endpoint: http://localhost:%s/api/messages", config.TEAMS_PORT)
     logger.info("Health:   http://localhost:%s/api/health", config.TEAMS_PORT)
 

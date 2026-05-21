@@ -49,9 +49,10 @@ Preencha no minimo:
 - Banco:
   - `DATABASE_URL`
 - Teams:
-  - `TEAMS_APP_ID`
-  - `TEAMS_APP_PASSWORD`
-  - `TEAMS_TENANT_ID`
+  - `TEAMS_APP_ID` ou `MicrosoftAppId`
+  - `TEAMS_APP_PASSWORD` ou `MicrosoftAppPassword`
+  - `TEAMS_TENANT_ID` ou `MicrosoftAppTenantId`
+  - `TEAMS_APP_TYPE` ou `MicrosoftAppType`
   - `TEAMS_MANIFEST_*`
 
 ## 4. Copiar os documentos
