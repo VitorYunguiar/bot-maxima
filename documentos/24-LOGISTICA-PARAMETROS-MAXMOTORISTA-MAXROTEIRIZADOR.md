@@ -103,6 +103,31 @@ Esses próximos parâmetros de RECEBIMENTO basta ler a legenda:
 O único diferencial é o Exibir a opções do recebimento, esse parâmetro aqui é para exibir a opção de recebimento no apk, quando ela está ativada, vai aparecer uma opção ao finalizar a entrega do motorista, perguntando se ele quer efetuar o recebimento (pagamento) do cliente ou quer deixar o recebimento como pendente.
 O único diferencial é o Ocultar Títulos com Cobrança por Boleto, Esse parâmetro aí basicamente vai ocultar a listagem dos recebíveis no qual a cobrança é boleto (em alguns casos não faz sentido chegar cobrando que o cliente pague um boleto entregando dinheiro pro motorista).
 
+### Parâmetros técnicos complementares do Aplicativo MaxMotorista
+
+Parâmetros citados na documentação funcional do aplicativo e usados diretamente em diagnósticos de suporte:
+
+- `TRABALHA_EMBALAGEM_ERP_APK`: quando ativo no servidor, sincroniza produtos respeitando o carregamento correto e exibe a embalagem conforme cadastro do ERP. Impacta a listagem de itens da nota no aplicativo, porque o app cruza `MXMD_ITENS_NOTA_FISCAL` com `MXMD_PRODUTOS` por `ID_CARREGAMENTO`, `NUMTRANSVENDA` e `NUMTRANSITEM`. Deve ser ativado apenas para app 4.43.0 ou superior.
+- `DIAS_JOB_NOTAS_FISCAIS`: parâmetro em `MXMP_PARAMETROS` que define quantos dias retroativos a job considera para enviar notas fiscais ao processamento de entregas. O padrão documentado é 30 dias. Se a `DTSAIDA` do carregamento estiver fora desse período, as notas podem não descer para o dispositivo e as entregas podem não aparecer na listagem do app.
+- `PERMITIR_REGISTRAR_15_FOTOS_TRANSBORDO`: quando ativo, troca o campo de foto único da atividade de transbordo por uma grade com até 15 fotos. As fotos são gravadas em `MXMD_FOTOS` com `TIPO_REGISTRO = 'TB'`; quando inativo, a foto fica no campo `FOTO_TRANSBORDO` de `MXMD_ENTREGAS`.
+- `OBRIGAR_REGISTRO_FOTO_ENTREGA`: quando ativo, a foto passa a ser obrigatória também em atividade de transbordo.
+- `EXIBIR_RECEBIVEIS_NO_ANDROID`: habilita a funcionalidade de recebíveis no aplicativo. Quando inativo, o botão de acesso à tela de recebimentos não é exibido.
+- `FOTO_RECEBIMENTO_DINHEIRO_OBRIGATORIA`: impede salvar recebimento do tipo Dinheiro sem foto.
+- `FOTO_RECEBIMENTO_CHEQUE_OBRIGATORIA`: impede salvar recebimento do tipo Cheque sem foto.
+- `CAMPOS_COMPLEMENTARES_RECEBIM_CHEQUE_OBRIGATORIOS`: torna obrigatórios os campos banco, agência, conta, número do cheque e CPF/CNPJ para recebimentos do tipo Cheque.
+- `OPCAO_DE_RECEBIMENTO_CONFORME_CODCOB`: ajusta a tela de recebíveis conforme a cobrança do título. Quando ativo, filtra títulos para cobranças Dinheiro (`DINH`, `DH`) e Cheque (`CH`) e limita as opções do dropdown conforme a cobrança.
+- `OCULTAR_TITULO_COBRANCA_BOLETO`: oculta títulos de cobrança Boleto (`BK`) da listagem de recebíveis.
+- `LANCAR_DESP_SEM_CARREG`: quando ativo, o campo de carregamento deixa de ser obrigatório no lançamento de despesas e o label aparece sem asterisco.
+- `OBRIGAR_REGISTRO_FOTO_DESPESAS`: impede salvar despesa sem foto registrada.
+
+Consulta rápida do parâmetro de dias da job:
+
+```sql
+SELECT *
+FROM MXMP_PARAMETROS
+WHERE NOME = 'DIAS_JOB_NOTAS_FISCAIS';
+```
+
 ---
 
 ## maxRoteirizador

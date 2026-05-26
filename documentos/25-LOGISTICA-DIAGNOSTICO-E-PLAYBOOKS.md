@@ -601,6 +601,92 @@ diante de um problema (“registro não aparece”, “pedido não entrou na rot
 
 ### MaxMotorista
 
+#### Produtos faltando ou divergentes na listagem de itens da nota
+
+Sintoma
+O motorista abre uma nota fiscal na realização de entrega e o aplicativo mostra menos produtos do que a nota possui. Exemplo: a nota tem 26 itens, mas o app exibe 4 ou 6.
+
+Causa provável
+A listagem do app usa um `INNER JOIN` entre `MXMD_ITENS_NOTA_FISCAL` e `MXMD_PRODUTOS`. O produto precisa bater com a nota em `ID_CARREGAMENTO`, `NUMTRANSVENDA` e `NUMTRANSITEM`. Se o parâmetro `TRABALHA_EMBALAGEM_ERP_APK` estiver desativado no servidor, os produtos podem ser sincronizados com carregamento incorreto e o `JOIN` descarta os itens.
+
+Como diagnosticar na base local do aplicativo
+Substituir `[NUMERO_NOTA]` pelo número da nota afetada.
+
+```sql
+SELECT COUNT(*) AS TOTAL_ITENS
+FROM MXMD_ITENS_NOTA_FISCAL NF
+INNER JOIN MXMD_NOTAS_FISCAIS NOTA
+    ON NOTA.ID = NF.ID_NOTA_FISCAL
+WHERE NOTA.NUMERO_NOTA = '[NUMERO_NOTA]';
+```
+
+```sql
+SELECT COUNT(*)
+FROM MXMD_ITENS_NOTA_FISCAL NF
+INNER JOIN MXMD_NOTAS_FISCAIS NOTA
+    ON NOTA.ID = NF.ID_NOTA_FISCAL
+INNER JOIN MXMD_PRODUTOS PROD
+    ON PROD.ID = NF.ID_PRODUTO
+   AND NOTA.ID_CARREGAMENTO = PROD.ID_CARREGAMENTO
+   AND PROD.NUMTRANSVENDA = NOTA.NUMERO_TRANSVENDA
+   AND PROD.NUMTRANSITEM = NF.NUMTRANSITEM
+WHERE NOTA.NUMERO_NOTA = '[NUMERO_NOTA]';
+```
+
+```sql
+SELECT
+    NF.ID_PRODUTO,
+    PROD.DESCRICAO,
+    PROD.ID_CARREGAMENTO,
+    PROD.NUMTRANSVENDA,
+    PROD.NUMTRANSITEM,
+    NF.NUMTRANSITEM AS NF_NUMTRANSITEM,
+    NOTA.NUMERO_TRANSVENDA,
+    NOTA.ID_CARREGAMENTO AS CARREG_NOTA
+FROM MXMD_ITENS_NOTA_FISCAL NF
+INNER JOIN MXMD_NOTAS_FISCAIS NOTA
+    ON NOTA.ID = NF.ID_NOTA_FISCAL
+LEFT JOIN MXMD_PRODUTOS PROD
+    ON PROD.ID = NF.ID_PRODUTO
+WHERE NOTA.NUMERO_NOTA = '[NUMERO_NOTA]';
+```
+
+Como interpretar
+Se `ID_CARREGAMENTO`, `NUMTRANSVENDA` ou `NUMTRANSITEM` em `MXMD_PRODUTOS` divergirem dos valores da nota/item, o problema está confirmado.
+
+Resolução
+Verificar no servidor se `TRABALHA_EMBALAGEM_ERP_APK` está ativo para o cliente. Esse parâmetro deve ser usado apenas com aplicativo 4.43.0 ou superior.
+
+#### Entregas duplicadas na listagem do aplicativo
+
+Sintoma
+O mesmo cliente aparece duas vezes na listagem de entregas do motorista, como se fossem duas entregas separadas, quando deveria existir apenas um card agrupado.
+
+Causa provável
+O app agrupa entregas do mesmo cliente quando `ID_CLIENTE`, `ID_ENDERECO_ENT_PED` e situação são iguais. Se a job gera uma entrega com `CODENDENTCLI` vazio e outra com `CODENDENTCLI` preenchido, o aplicativo interpreta endereços diferentes. Corrigir `CODENDENTCLI` depois da geração não refaz o agrupamento já criado.
+
+Como diagnosticar
+Substituir `[ID_CLIENTE]` pelo código do cliente afetado.
+
+```sql
+SELECT
+    ID,
+    ID_CLIENTE,
+    ID_CARREGAMENTO,
+    ID_ENDERECO_ENT_PED,
+    SITUACAO,
+    SITUACAO_ORIG
+FROM MXMD_ENTREGAS
+WHERE ID_CLIENTE = '[ID_CLIENTE]'
+ORDER BY ID;
+```
+
+Como interpretar
+Se as entregas aparecem com `ID_ENDERECO_ENT_PED` diferentes, por exemplo `NULL` e `1`, a duplicidade foi causada na geração das entregas.
+
+Resolução
+Garantir que `CODENDENTCLI` esteja corretamente preenchido antes da execução da job de montagem de carga e faturamento. Se a causa não estiver confirmada, escalar para backend/implantação com os IDs dos pedidos e entregas afetados.
+
 #### Status da entrega não atualiza no portal
 Sintoma
 Cliente diz que o motorista entregou, reagendou ou colocou em fila de espera, mas o status no portal continua antigo.
@@ -998,6 +1084,48 @@ Pedir para ele forçar uma sincronização e informar horário.
 ### As entregas aparecem no portal web (maxMotorista / consultas)?
 Se não aparecem nem no web, o problema está antes do app.
 
+Diagnóstico adicional na base local do aplicativo
+Quando o romaneio foi iniciado, mas a lista no dispositivo aparece vazia, validar se a base local recebeu notas e itens. Substituir `[ID_CARREGAMENTO]` pelo carregamento afetado.
+
+```sql
+SELECT
+    ent.ID,
+    ent.ID_CARREGAMENTO,
+    carreg.ID_ROMANEIO,
+    ent.SITUACAO
+FROM MXMD_ENTREGAS ent
+INNER JOIN MXMD_CARREGAMENTOS carreg
+    ON carreg.ID = ent.ID_CARREGAMENTO
+WHERE ent.ID_CARREGAMENTO = '[ID_CARREGAMENTO]';
+```
+
+```sql
+SELECT COUNT(*) AS TOTAL_NOTAS
+FROM MXMD_NOTAS_FISCAIS
+WHERE ID_CARREGAMENTO = '[ID_CARREGAMENTO]';
+```
+
+```sql
+SELECT
+    ent.ID AS ID_ENTREGA,
+    (
+        SELECT COUNT(*)
+        FROM MXMD_NOTAS_FISCAIS NF
+        WHERE NF.ID_ENTREGA = ent.ID
+    ) AS QTD_NOTAS,
+    (
+        SELECT COUNT(*)
+        FROM MXMD_ITENS_NOTA_FISCAL ITEM
+        INNER JOIN MXMD_NOTAS_FISCAIS NF
+            ON NF.ID = ITEM.ID_NOTA_FISCAL
+        WHERE NF.ID_ENTREGA = ent.ID
+    ) AS QTD_ITENS
+FROM MXMD_ENTREGAS ent
+WHERE ent.ID_CARREGAMENTO = '[ID_CARREGAMENTO]';
+```
+
+Se `QTD_NOTAS = 0` e `QTD_ITENS = 0`, a entrega pode existir, mas as notas não foram sincronizadas para o dispositivo. Nesse caso, o problema está no servidor/sincronização e deve ser tratado como falha de geração/envio das notas para o app.
+
 1) Validar se o carregamento está corretamente faturado
 No ERP:
 Tabela ERP_MXSCARREG
@@ -1140,14 +1268,16 @@ logout/login no app,
 forçar sincronização,
 confirmar se a data/hora da sincronização mudou.
 
-6) Verificar parâmetro de “Envio das notas fiscais para processamento” (dias)
-Existe um parâmetro na área administrativa relacionado ao prazo em dias para envio das notas fiscais para processamento de entregas.
-Esse parâmetro define que as entregas só serão geradas se a data do pedido/nota for superior à quantidade de dias configurada.
-Passos:
-Verificar o valor parametrizado (no menu administrativo / tabela de parâmetros específica – documentar nesse capítulo o nome da tabela/coluna quando você tiver).
-### Comparar a data do pedido/nota com esse parâmetro:
-Se a data do pedido/nota não atende ainda o prazo mínimo, as entregas não serão geradas.
-Ajustar o parâmetro ou aguardar o período correto, conforme a regra de negócio do cliente.
+6) Verificar parâmetro `DIAS_JOB_NOTAS_FISCAIS`
+O parâmetro `DIAS_JOB_NOTAS_FISCAIS`, na tabela `MXMP_PARAMETROS`, define quantos dias retroativos a job considera para processar notas fiscais e gerar entregas. O padrão documentado é 30 dias.
+
+```sql
+SELECT *
+FROM MXMP_PARAMETROS
+WHERE NOME = 'DIAS_JOB_NOTAS_FISCAIS';
+```
+
+Comparar a `DTSAIDA` do carregamento afetado com a data atual menos a quantidade de dias configurada. Se a `DTSAIDA` for anterior ao limite, as notas não serão sincronizadas para o dispositivo e as entregas podem não aparecer no app. Aumentar o parâmetro só quando necessário, porque isso aumenta o volume de processamento da job.
 
 SELECTs recomendados (resumo)
 Carregamento no ERP

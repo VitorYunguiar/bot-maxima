@@ -10,7 +10,7 @@ Dicionário de tabelas locais do aplicativo, com campos, tipos e chaves.
 
 ## Visão geral
 
-Esta base contém **69 tabelas** e **560 campos**.
+Esta base contém **69 tabelas** e **561 campos**.
 
 ## Como usar esta referência
 
@@ -600,6 +600,7 @@ Esta base contém **69 tabelas** e **560 campos**.
 | VLBONIFIC | REAL | permite nulo |  |  |
 | ID_FILIAL | VARCHAR(50) | permite nulo |  |  |
 | NUMTRANSVENDA | INTEGER | permite nulo |  |  |
+| NUMTRANSITEM | INTEGER | permite nulo |  | usado no cruzamento com MXMD_ITENS_NOTA_FISCAL para listagem de itens da nota |
 
 ## MXMD_PRODUTOS_VOLUMES_ENTREGAS
 

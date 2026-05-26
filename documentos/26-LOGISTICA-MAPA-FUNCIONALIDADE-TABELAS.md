@@ -440,6 +440,26 @@ Observações de suporte:
 ### o checar se a procedure/job de entregas alimentou MXMP_ENTREGAS;
 o se a tela mostra “entrega pendente”, analisar detalhes em MXMP_HISTORICO_ENTREGAS / MXMP_LOG_SITUACAO_ENTREGA_NOTA.
 ### ________________________________________
+#### 4.2.2.1 Funcionalidade: Aplicativo – Listagem de Entregas e Itens da Nota
+
+Módulo:
+### maxMotorista – Aplicativo Android
+Tabelas locais principais (MXMD):
+### • MXMD_CARREGAMENTOS
+### • MXMD_ENTREGAS
+### • MXMD_NOTAS_FISCAIS
+### • MXMD_ITENS_NOTA_FISCAL
+### • MXMD_PRODUTOS
+Tabelas e parâmetros no servidor:
+### • MXMP_PARAMETROS
+### • DIAS_JOB_NOTAS_FISCAIS
+### • TRABALHA_EMBALAGEM_ERP_APK
+Observações de suporte:
+• Se a entrega existe, mas a listagem do app fica vazia, conferir se há notas e itens em MXMD_NOTAS_FISCAIS e MXMD_ITENS_NOTA_FISCAL para o ID_CARREGAMENTO.
+• Se a nota abre com menos itens do que possui no banco, comparar MXMD_ITENS_NOTA_FISCAL com MXMD_PRODUTOS. O app cruza ID_CARREGAMENTO, NUMTRANSVENDA e NUMTRANSITEM; divergência nesses campos faz o INNER JOIN esconder itens.
+• Se a DTSAIDA do carregamento está fora do período de DIAS_JOB_NOTAS_FISCAIS, as notas podem nem ser enviadas para o dispositivo.
+• O parâmetro TRABALHA_EMBALAGEM_ERP_APK corrige sincronização/embalagem de produtos para app 4.43.0 ou superior.
+### ________________________________________
 #### 4.2.3 Funcionalidade: Consultas – Listagem de Romaneios
 
 Módulo:
