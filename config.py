@@ -302,17 +302,6 @@ MAX_IMAGE_SIZE_BYTES = MAX_IMAGE_SIZE_MB * 1024 * 1024
 DOCS_DIR = os.getenv("DOCS_DIR", "./documentos")
 FAILED_INGEST_REPORT = os.getenv("FAILED_INGEST_REPORT", "./ingest_failures.json")
 
-# Jira - extracao Gatekeeper
-JIRA_URL = os.getenv("JIRA_URL", "")
-JIRA_BASE_URL = os.getenv("JIRA_BASE_URL", JIRA_URL)
-JIRA_USERNAME = os.getenv("JIRA_USERNAME", os.getenv("USERNAME", ""))
-JIRA_PASSWORD = os.getenv("JIRA_PASSWORD", os.getenv("PASSWORD", ""))
-JIRA_API_TOKEN = os.getenv("JIRA_API_TOKEN", "")
-JIRA_SESSION_COOKIE = os.getenv("JIRA_SESSION_COOKIE", "")
-JIRA_ASSIGNEE_ALIASES = os.getenv("JIRA_ASSIGNEE_ALIASES", "")
-JIRA_USER_SEARCH_PATH = os.getenv("JIRA_USER_SEARCH_PATH", "/rest/api/2/user/search")
-JIRA_REQUEST_TIMEOUT_SECONDS = _env_float("JIRA_REQUEST_TIMEOUT_SECONDS", 60.0)
-
 _ALLOWED_EMBEDDING_DIMENSIONS = {1536, 3072}
 if EMBEDDING_DIMENSIONS not in _ALLOWED_EMBEDDING_DIMENSIONS:
     raise EnvironmentError(
