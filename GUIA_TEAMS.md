@@ -110,6 +110,7 @@ curl -k https://sabidao.maximatech.com.br:7443/api/health
 ## Observacoes
 
 - O `TEAMS_APP_ID` ou `MicrosoftAppId` e usado tanto no runtime quanto no `manifest.id` e no `bots[].botId`
+- O runtime usa `CloudAdapter` com `ConfigurationBotFrameworkAuthentication`, conforme o modelo atual do Bot Framework Python para apps `SingleTenant`
 - O fluxo novo usa `teams_manifest/manifest.template.json` como fonte versionada
 - Os artefatos gerados em `teams_manifest/build/` sao os arquivos para publicar
 - Mudancas de codigo devem ser versionadas e aplicadas no servidor via `git pull`

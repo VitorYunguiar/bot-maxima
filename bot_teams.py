@@ -26,13 +26,14 @@ import time
 from aiohttp import web
 from botbuilder.core import (
     BotAdapter,
-    BotFrameworkAdapter,
-    BotFrameworkAdapterSettings,
     TurnContext,
     ActivityHandler,
 )
+from botbuilder.integration.aiohttp import (
+    CloudAdapter,
+    ConfigurationBotFrameworkAuthentication,
+)
 from botbuilder.schema import Activity, ActivityTypes
-from botframework.connector.auth import MicrosoftAppCredentials
 
 import config
 from db import validate_database_config
@@ -66,29 +67,6 @@ def _decode_jwt_claims(auth_header: str) -> dict:
         return json.loads(base64.urlsafe_b64decode(payload.encode("ascii")))
     except Exception:
         return {}
-
-
-def _jwt_claims_from_token(token: str) -> dict:
-    parts = token.split(".")
-    if len(parts) < 2:
-        return {}
-    payload = parts[1] + "=" * (-len(parts[1]) % 4)
-    try:
-        return json.loads(base64.urlsafe_b64decode(payload.encode("ascii")))
-    except Exception:
-        return {}
-
-
-def _claim_summary(claims: dict) -> dict:
-    return {
-        "aud": claims.get("aud"),
-        "appid": claims.get("appid") or claims.get("azp"),
-        "iss": claims.get("iss"),
-        "tid": claims.get("tid"),
-        "ver": claims.get("ver"),
-        "nbf": claims.get("nbf"),
-        "exp": claims.get("exp"),
-    }
 
 
 def _activity_diagnostics(activity: Activity, auth_header: str) -> dict:
@@ -127,30 +105,23 @@ def _connector_client_diagnostics(context: TurnContext) -> dict:
     }
 
 
-def _log_outbound_token_probe(reason: str) -> None:
+def _log_cloud_auth_probe(reason: str) -> None:
     try:
-        credentials = MicrosoftAppCredentials(
-            config.TEAMS_APP_ID,
-            config.TEAMS_APP_PASSWORD,
-            channel_auth_tenant=config.TEAMS_TENANT_ID,
-        )
-        token = credentials.get_access_token(force_refresh=True)
         logger.info(
-            "Teams outbound token probe (%s): credentials=%s claims=%s",
+            "Teams CloudAdapter auth probe (%s): config=%s originating_audience=%s",
             reason,
             json.dumps(
                 {
-                    "app_id": credentials.microsoft_app_id,
-                    "tenant": credentials.tenant,
-                    "oauth_scope": credentials.oauth_scope,
-                    "oauth_endpoint": credentials.oauth_endpoint,
+                    "app_type": TeamsAdapterConfig.APP_TYPE,
+                    "app_id": TeamsAdapterConfig.APP_ID,
+                    "tenant_id": TeamsAdapterConfig.APP_TENANTID,
                 },
                 ensure_ascii=False,
             ),
-            json.dumps(_claim_summary(_jwt_claims_from_token(token)), ensure_ascii=False),
+            BOTFRAMEWORK_AUTH.get_originating_audience(),
         )
     except Exception as exc:
-        logger.error("Teams outbound token probe failed (%s): %s", reason, exc, exc_info=True)
+        logger.error("Teams CloudAdapter auth probe failed (%s): %s", reason, exc, exc_info=True)
 
 
 def _normalize_teams_bot_id(value: str | None) -> str | None:
@@ -160,12 +131,14 @@ def _normalize_teams_bot_id(value: str | None) -> str | None:
 
 
 class TeamsAdapterConfig:
+    """Configuration shape expected by ConfigurationBotFrameworkAuthentication."""
+
     APP_ID = config.TEAMS_APP_ID
     APP_PASSWORD = config.TEAMS_APP_PASSWORD
     APP_TYPE = config.TEAMS_APP_TYPE
     APP_TENANTID = config.TEAMS_TENANT_ID
     CALLER_ID = "urn:botframework:azure"
-    OAUTH_URL = "https://token.botframework.com"
+    OAUTH_URL = "https://api.botframework.com"
     TO_CHANNEL_FROM_BOT_LOGIN_URL = (
         f"https://login.microsoftonline.com/{config.TEAMS_TENANT_ID}/oauth2/v2.0/token"
         if config.TEAMS_TENANT_ID
@@ -582,7 +555,7 @@ async def on_error(context: TurnContext, error: Exception):
         "Teams outbound diagnostics: %s",
         json.dumps(_connector_client_diagnostics(context), ensure_ascii=False),
     )
-    _log_outbound_token_probe("turn_error")
+    _log_cloud_auth_probe("turn_error")
     response = getattr(error, "response", None)
     if response is not None:
         status_code = getattr(response, "status_code", None)
@@ -616,13 +589,8 @@ async def on_error(context: TurnContext, error: Exception):
 
 # ── Servidor aiohttp ─────────────────────────────────────
 
-ADAPTER = BotFrameworkAdapter(
-    BotFrameworkAdapterSettings(
-        app_id=config.TEAMS_APP_ID,
-        app_password=config.TEAMS_APP_PASSWORD,
-        channel_auth_tenant=config.TEAMS_TENANT_ID,
-    )
-)
+BOTFRAMEWORK_AUTH = ConfigurationBotFrameworkAuthentication(TeamsAdapterConfig)
+ADAPTER = CloudAdapter(BOTFRAMEWORK_AUTH)
 ADAPTER.on_turn_error = on_error
 
 BOT = TeamsBot()
@@ -661,8 +629,7 @@ async def messages(req: web.Request) -> web.Response:
         )
 
     try:
-        identity = await ADAPTER._authenticate_request(activity, auth_header)
-        invoke_response = await ADAPTER.process_activity_with_identity(activity, identity, BOT.on_turn)
+        invoke_response = await ADAPTER.process_activity(auth_header, activity, BOT.on_turn)
     except PermissionError:
         logger.warning("Requisicao Teams nao autorizada: activity_type=%s", activity.type)
         return web.Response(status=401)
@@ -707,7 +674,7 @@ if __name__ == "__main__":
         config.TEAMS_APP_ID,
         config.TEAMS_TENANT_ID,
     )
-    _log_outbound_token_probe("startup")
+    _log_cloud_auth_probe("startup")
     logger.info("Endpoint: http://localhost:%s/api/messages", config.TEAMS_PORT)
     logger.info("Health:   http://localhost:%s/api/health", config.TEAMS_PORT)
 
