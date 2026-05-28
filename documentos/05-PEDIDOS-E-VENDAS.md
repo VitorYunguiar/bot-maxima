@@ -139,6 +139,44 @@ No aplicativo, ao tentar inserir uma quantidade de itens superior a cadastrada, 
 
 ---
 
+## Adicionar o Mesmo Item Duas Vezes no Pedido
+
+### Visao Geral
+
+O comportamento de inserir o mesmo produto mais de uma vez no pedido depende da combinacao entre um parametro interno do maxPedido e um parametro da rotina 132 do Winthor.
+
+| Parametro | Origem | Funcao |
+|-----------|--------|--------|
+| `TRUNCAR_ITEM_PCPEDI` | Central de Configuracoes do maxPedido | Quando `TRUE`, bloqueia a insercao do mesmo produto mais de uma vez no pedido. Quando `FALSE`, nao bloqueia por si so a insercao duplicada. |
+| `CON_USACHAVETRIPLAPCPEDI` | Winthor, rotina 132, parametro 1526 | Permitir digitar o mesmo item no pedido. Trabalha em conjunto com `TRUNCAR_ITEM_PCPEDI`. |
+
+### Cenario 1: Item Normal Pela Aba Tabela
+
+| TRUNCAR_ITEM_PCPEDI | CON_USACHAVETRIPLAPCPEDI | Comportamento esperado |
+|---------------------|---------------------------|------------------------|
+| TRUE | TRUE | Nao permite inserir novo item. Deve abrir a edicao do item ja adicionado. |
+| TRUE | FALSE | Nao permite inserir novo item. Deve abrir a edicao do item ja adicionado. |
+| FALSE | TRUE | Permite inserir novo item. Deve abrir o item para negociar e salvar uma nova linha na aba Itens. |
+| FALSE | FALSE | Nao permite inserir novo item. Deve abrir a edicao do item ja adicionado. |
+
+### Cenario 2: Item Normal Pela Aba Campanha
+
+| TRUNCAR_ITEM_PCPEDI | CON_USACHAVETRIPLAPCPEDI | Comportamento esperado |
+|---------------------|---------------------------|------------------------|
+| TRUE | TRUE | Nao permite inserir novo item. Deve abrir o dialogo: "Produto inserido via campanha de desconto, nao pode ser editado pela tela de negociacao!" |
+| TRUE | FALSE | Nao permite inserir novo item. Deve abrir o dialogo: "Produto inserido via campanha de desconto, nao pode ser editado pela tela de negociacao!" |
+| FALSE | TRUE | Permite inserir novo item. Deve abrir o item para negociar e salvar uma nova linha na aba Itens. |
+| FALSE | FALSE | Nao permite inserir novo item. Deve abrir o dialogo: "Produto inserido via campanha de desconto, nao pode ser editado pela tela de negociacao!" |
+
+### Observacoes Sobre Campanha
+
+- `TRUNCAR_ITEM_PCPEDI = TRUE` e `CON_USACHAVETRIPLAPCPEDI = TRUE`: sobrescreve sem apresentar dialogo.
+- `TRUNCAR_ITEM_PCPEDI = TRUE` e `CON_USACHAVETRIPLAPCPEDI = FALSE`: apresenta dialogo e nao deixa salvar a campanha.
+- `TRUNCAR_ITEM_PCPEDI = FALSE` e `CON_USACHAVETRIPLAPCPEDI = FALSE`: apresenta dialogo e nao deixa salvar a campanha.
+- `TRUNCAR_ITEM_PCPEDI = FALSE` e `CON_USACHAVETRIPLAPCPEDI = TRUE`: segue o fluxo normal editando o proprio item da campanha, sem afetar os itens inseridos pela aba Tabela.
+
+---
+
 ## Compartilhar Pedidos e Orcamentos
 
 ### Visao Geral

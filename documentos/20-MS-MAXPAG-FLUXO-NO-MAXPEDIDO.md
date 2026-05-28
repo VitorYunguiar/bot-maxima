@@ -120,6 +120,53 @@ Responsabilidades:
 
 ---
 
+## Configuracao de cartao de credito no maxPedido
+
+Para usar cartao de credito no maxPedido, o cliente deve ter os dados de comunicacao da operadora antes de iniciar a configuracao:
+
+- ID da operadora.
+- TOKEN ou chave da operadora.
+- Cobranca Cartao de Credito cadastrada no ERP.
+- Parametro `PERMITIR_VENDA_CARTAO_CREDITO` habilitado com valor `S`.
+
+O fluxo inicia quando o RCA seleciona a cobranca Cartao de Credito no pedido. Ao salvar, o aplicativo comunica a API maxPague/maxPag, que faz a reserva do valor junto a operadora. Quando a reserva e efetivada, o comprovante retorna para a APK. O pedido segue para o ERP e fica aguardando o faturamento; depois de faturado, o retorno para a API efetiva a cobranca e libera o status no aplicativo.
+
+### Configuracao no Portal Admin
+
+1. Acessar `https://appsv.solucoesmaxima.com.br`.
+2. Informar usuario e senha.
+3. Selecionar o ambiente correto. Em geral, usar Producao; Homologacao somente quando o ambiente estiver validado para testes.
+4. Entrar em `maxVendas > maxPedido`.
+5. Acessar `Parametros do Sistema`.
+6. Pesquisar `PERMITIR_VENDA_CARTAO_CREDITO`.
+7. Habilitar o parametro marcando a caixa de selecao.
+8. Salvar.
+
+Se o parametro nao for encontrado, ele pode ser incluido pelo botao de incluir parametro. Em caso de duvida, acionar o suporte.
+
+### Parametros por operadora
+
+Atualmente o fluxo de cartao de credito no maxPedido trabalha com CIELO, GETNET e REDE. Habilitar e preencher os parametros da operadora utilizada.
+
+| Operadora | Parametros |
+| --- | --- |
+| CIELO | `CIELO_MERCHANT_ID`, `CIELO_MERCHANT_KEY`, `CIELO_MODO_HOMOLOGACAO` |
+| GETNET | `GETNET_MERCHANT_ID`, `GETNET_MERCHANT_KEY`, `GETNET_MODO_HOMOLOGACAO` |
+| REDE | `REDE_MERCHANT_ID`, `REDE_MERCHANT_KEY`, `REDE_MODO_HOMOLOGACAO` |
+
+Os parametros de homologacao devem ser usados apenas durante testes. Apos a homologacao, eles devem ser desabilitados e os parametros de producao devem permanecer configurados.
+
+### Uso no aplicativo
+
+1. Iniciar o pedido pelo menu de clientes.
+2. Selecionar o cliente.
+3. Na tela de pedido, selecionar a cobranca Cartao de Credito.
+4. Clicar no icone de engrenagem exibido ao lado da cobranca.
+5. Inserir os dados do cartao manualmente ou usar o icone de camera para leitura automatica.
+6. Confirmar os dados e seguir o pedido normalmente.
+
+---
+
 ## Integracao com ERP
 
 O IntPDV:

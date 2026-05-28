@@ -11,7 +11,7 @@ __pycache__/
 *.log
 
 # Dados locais
-documentos/
+documentos/docbkp/
 ingest_failures.json
 teams_manifest/build/
 runtime/
